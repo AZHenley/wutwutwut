@@ -725,7 +725,8 @@
             
             // Enemy units in top left (0, 0)
             const enemyCell = gameState.cells[0][0];
-            for (let i = 0; i < 5; i++) {
+            const enemyUnitCount = DIFFICULTY_LEVEL === 3 ? 10 : 5;
+            for (let i = 0; i < enemyUnitCount; i++) {
                 const unit = new Unit('enemy', enemyCell);
                 gameState.units.push(unit);
                 gameState.enemyTotalUnitsProduced++;
