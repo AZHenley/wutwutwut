@@ -20,6 +20,10 @@
             display: flex;
             flex-direction: column;
             align-items: center;
+            width: 100%;
+            max-width: 100vw;
+            padding: 10px;
+            box-sizing: border-box;
         }
         #info {
             color: white;
@@ -28,12 +32,28 @@
             border-radius: 5px;
             font-size: 14px;
             margin-bottom: 10px;
+            width: 100%;
+            max-width: 500px;
+            box-sizing: border-box;
         }
         canvas {
             touch-action: none;
             user-select: none;
             -webkit-user-select: none;
             -webkit-touch-callout: none;
+            max-width: 100%;
+            max-height: calc(100vh - 200px);
+            width: auto;
+            height: auto;
+        }
+        @media (max-width: 600px) {
+            #info {
+                font-size: 12px;
+                padding: 8px;
+            }
+            body {
+                padding: 5px;
+            }
         }
     </style>
 </head>
@@ -83,9 +103,49 @@
             width: GRID_SIZE * CELL_SIZE,
             height: GRID_SIZE * CELL_SIZE,
             backgroundColor: 0x16213e,
-            antialias: true
+            antialias: true,
+            resolution: window.devicePixelRatio || 1,
+            autoDensity: true
         });
         document.getElementById('gameContainer').appendChild(app.view);
+        
+        // Function to scale canvas to fit viewport on mobile
+        function scaleCanvas() {
+            const canvas = app.view;
+            const container = document.getElementById('gameContainer');
+            const info = document.getElementById('info');
+            
+            const gameWidth = GRID_SIZE * CELL_SIZE;
+            const gameHeight = GRID_SIZE * CELL_SIZE;
+            
+            // Get available space (accounting for info panel and padding)
+            const infoHeight = info.offsetHeight;
+            const padding = 20;
+            const availableWidth = window.innerWidth - padding;
+            const availableHeight = window.innerHeight - infoHeight - padding - 20;
+            
+            // Calculate scale to fit both width and height
+            const scaleX = availableWidth / gameWidth;
+            const scaleY = availableHeight / gameHeight;
+            const scale = Math.min(scaleX, scaleY, 1); // Don't scale up on desktop
+            
+            // Only apply scaling on mobile (when scale < 1)
+            if (scale < 1) {
+                canvas.style.width = (gameWidth * scale) + 'px';
+                canvas.style.height = (gameHeight * scale) + 'px';
+            } else {
+                // On desktop, use original size
+                canvas.style.width = gameWidth + 'px';
+                canvas.style.height = gameHeight + 'px';
+            }
+        }
+        
+        // Scale on load and resize
+        scaleCanvas();
+        window.addEventListener('resize', scaleCanvas);
+        window.addEventListener('orientationchange', () => {
+            setTimeout(scaleCanvas, 100); // Small delay for orientation change
+        });
 
         // Game state
         const gameState = {
@@ -97,7 +157,8 @@
             playerSpawnTimer: 0,
             enemySpawnTimer: 0,
             playerTotalUnitsProduced: 0,
-            enemyTotalUnitsProduced: 0
+            enemyTotalUnitsProduced: 0,
+            gameOver: false
         };
 
         // Cell class
@@ -491,6 +552,8 @@
         }
 
         function onMouseDown(event) {
+            if (gameState.gameOver) return; // Don't allow input when game is over
+            
             const rect = app.view.getBoundingClientRect();
             const x = event.clientX - rect.left;
             const y = event.clientY - rect.top;
@@ -550,6 +613,8 @@
         // Touch event handlers
         function onTouchStart(event) {
             event.preventDefault(); // Prevent scrolling and zooming
+            if (gameState.gameOver) return; // Don't allow input when game is over
+            
             const touch = event.touches[0];
             const rect = app.view.getBoundingClientRect();
             const x = touch.clientX - rect.left;
@@ -632,6 +697,8 @@
 
         // Simple AI for enemy
         function updateAI() {
+            if (gameState.gameOver) return; // Don't update AI if game is over
+            
             // Every 3 seconds, move units from a random enemy cell to an adjacent cell
             if (Math.random() < 0.01) {
                 const enemyCells = [];
@@ -684,6 +751,8 @@
 
         // Spawn units
         function spawnUnits() {
+            if (gameState.gameOver) return; // Don't spawn if game is over
+            
             // Player spawning in bottom right (4, 4)
             gameState.playerSpawnTimer++;
             const playerCells = countOwnedCells('player');
@@ -713,6 +782,68 @@
                     gameState.enemyTotalUnitsProduced++;
                 }
             }
+        }
+
+        // Check for win/lose conditions
+        function checkGameOver() {
+            if (gameState.gameOver) return; // Already game over
+            
+            const totalCells = GRID_SIZE * GRID_SIZE;
+            const playerCells = countOwnedCells('player');
+            const enemyCells = countOwnedCells('enemy');
+            
+            if (playerCells === totalCells) {
+                gameState.gameOver = true;
+                setTimeout(() => {
+                    alert('You win!');
+                    restartGame();
+                }, 100);
+            } else if (enemyCells === totalCells) {
+                gameState.gameOver = true;
+                setTimeout(() => {
+                    alert('You lose!');
+                    restartGame();
+                }, 100);
+            }
+        }
+
+        // Restart the game
+        function restartGame() {
+            // Clean up all units
+            gameState.units.forEach(unit => {
+                unit.destroy();
+            });
+            
+            // Clean up all cells
+            gameState.cells.forEach(row => {
+                row.forEach(cell => {
+                    app.stage.removeChild(cell.container);
+                    cell.container.destroy({ children: true });
+                });
+            });
+            
+            // Clean up drag line if it exists
+            if (gameState.dragLine) {
+                app.stage.removeChild(gameState.dragLine);
+                gameState.dragLine.destroy();
+                gameState.dragLine = null;
+            }
+            
+            // Reset game state
+            gameState.cells = [];
+            gameState.units = [];
+            gameState.selectedCell = null;
+            gameState.isDragging = false;
+            gameState.playerSpawnTimer = 0;
+            gameState.enemySpawnTimer = 0;
+            gameState.playerTotalUnitsProduced = 0;
+            gameState.enemyTotalUnitsProduced = 0;
+            gameState.gameOver = false;
+            
+            // Reinitialize
+            initGrid();
+            initUnits();
+            updateUI();
         }
 
         // Game loop
@@ -757,6 +888,9 @@
             
             updateAI();
             updateUI();
+            
+            // Check for win/lose conditions
+            checkGameOver();
         });
 
         // Initialize game
