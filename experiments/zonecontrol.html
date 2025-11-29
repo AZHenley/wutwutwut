@@ -138,16 +138,127 @@
 
     <script>
         // Game configuration
-        const GRID_SIZE = 5;
-        const CELL_SIZE = 100;
+        const GRID_SIZE = 3; // Hexagon grid radius (number of hexagons from center)
+        const HEX_SIZE = 50; // Hexagon size (radius from center to corner)
         const UNIT_RADIUS = 4;
         const GAME_SPEED = 1.75; // Game speed multiplier (1.0 = normal speed)
         const UNIT_SPEED = 69 * GAME_SPEED; // Pixels per second
         const UNIT_WANDER_SPEED = 21 * GAME_SPEED; // Pixels per second
-        const UNIT_WANDER_RADIUS = 40;
+        const UNIT_WANDER_RADIUS = 30; // Reduced for hexagons
         const BASE_SPAWN_RATE = 4.5 / GAME_SPEED; // Seconds between spawns (at 60fps, 270 frames = 4.5 seconds)
         const SPAWN_RATE_PER_CELL = 0.15 / GAME_SPEED; // Seconds faster spawn per owned cell (at 60fps, 9 frames = 0.15 seconds)
         const CAPTURE_RATE = 9 * GAME_SPEED; // How fast cells are captured/neutralized per second (higher = faster)
+        
+        // Hexagon grid utilities
+        // Using axial coordinates (q, r) for hexagons
+        // Pointy-top hexagon layout
+        const HEX_WIDTH = Math.sqrt(3) * HEX_SIZE;
+        const HEX_HEIGHT = 2 * HEX_SIZE;
+        
+        // Hexagon direction vectors (6 neighbors)
+        const HEX_DIRECTIONS = [
+            { q: 1, r: 0 },   // East
+            { q: 1, r: -1 },  // Northeast
+            { q: 0, r: -1 },  // Northwest
+            { q: -1, r: 0 },  // West
+            { q: -1, r: 1 },  // Southwest
+            { q: 0, r: 1 }    // Southeast
+        ];
+        
+        // Convert hex coordinates (q, r) to pixel coordinates
+        function hexToPixel(q, r) {
+            const x = HEX_WIDTH * (q + r / 2);
+            const y = HEX_HEIGHT * 0.75 * r;
+            return { x, y };
+        }
+        
+        // Convert pixel coordinates to hex coordinates (q, r)
+        function pixelToHex(x, y) {
+            // For pointy-top hexagons
+            const q = (Math.sqrt(3)/3 * x - 1/3 * y) / HEX_SIZE;
+            const r = (2/3 * y) / HEX_SIZE;
+            return hexRound(q, r);
+        }
+        
+        // Round fractional hex coordinates to nearest hex
+        function hexRound(q, r) {
+            let s = -q - r;
+            let rq = Math.round(q);
+            let rr = Math.round(r);
+            let rs = Math.round(s);
+            
+            const qDiff = Math.abs(rq - q);
+            const rDiff = Math.abs(rr - r);
+            const sDiff = Math.abs(rs - s);
+            
+            if (qDiff > rDiff && qDiff > sDiff) {
+                rq = -rr - rs;
+            } else if (rDiff > sDiff) {
+                rr = -rq - rs;
+            }
+            
+            return { q: rq, r: rr };
+        }
+        
+        // Get neighbors of a hex
+        function getHexNeighbors(q, r) {
+            return HEX_DIRECTIONS.map(dir => ({
+                q: q + dir.q,
+                r: r + dir.r
+            }));
+        }
+        
+        // Generate all hexes in a hexagonal grid of given radius
+        function generateHexGrid(radius) {
+            const hexes = [];
+            for (let q = -radius; q <= radius; q++) {
+                const r1 = Math.max(-radius, -q - radius);
+                const r2 = Math.min(radius, -q + radius);
+                for (let r = r1; r <= r2; r++) {
+                    hexes.push({ q, r });
+                }
+            }
+            return hexes;
+        }
+        
+        // Check if hex coordinates are within grid bounds
+        function isHexInBounds(q, r, radius) {
+            return Math.abs(q) <= radius && Math.abs(r) <= radius && Math.abs(-q - r) <= radius;
+        }
+        
+        // Draw a hexagon at given position
+        function drawHexagon(graphics, x, y, size, fillColor, fillAlpha, lineColor, lineWidth) {
+            graphics.clear();
+            if (fillColor !== undefined) {
+                graphics.beginFill(fillColor, fillAlpha !== undefined ? fillAlpha : 1);
+            }
+            if (lineColor !== undefined) {
+                graphics.lineStyle(lineWidth !== undefined ? lineWidth : 1, lineColor, 1);
+            }
+            
+            // Draw hexagon (pointy-top)
+            const points = [];
+            for (let i = 0; i < 6; i++) {
+                const angle = Math.PI / 3 * i - Math.PI / 6; // Start at top
+                points.push(x + size * Math.cos(angle), y + size * Math.sin(angle));
+            }
+            graphics.drawPolygon(points);
+            
+            if (fillColor !== undefined) {
+                graphics.endFill();
+            }
+        }
+        
+        // Check if point is inside hexagon
+        function pointInHexagon(px, py, hx, hy, size) {
+            const dx = px - hx;
+            const dy = py - hy;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // For pointy-top hexagon, the circumscribed circle radius is size
+            // Use the full size for easier clicking
+            return distance <= size;
+        }
 
         // Difficulty level (0 = Baby, 1 = Normal, 2 = Hard, 3 = God)
         let DIFFICULTY_LEVEL = 1; // Default to Normal
@@ -163,10 +274,25 @@
             SHIELD: 0xFFD700 // Gold color for shield
         };
 
+        // Calculate canvas size for hexagon grid
+        const hexGrid = generateHexGrid(GRID_SIZE);
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        hexGrid.forEach(hex => {
+            const pos = hexToPixel(hex.q, hex.r);
+            minX = Math.min(minX, pos.x);
+            maxX = Math.max(maxX, pos.x);
+            minY = Math.min(minY, pos.y);
+            maxY = Math.max(maxY, pos.y);
+        });
+        const CANVAS_WIDTH = maxX - minX + HEX_SIZE * 2;
+        const CANVAS_HEIGHT = maxY - minY + HEX_SIZE * 2;
+        const CANVAS_OFFSET_X = -minX + HEX_SIZE;
+        const CANVAS_OFFSET_Y = -minY + HEX_SIZE;
+        
         // Initialize PixiJS application
         const app = new PIXI.Application({
-            width: GRID_SIZE * CELL_SIZE,
-            height: GRID_SIZE * CELL_SIZE,
+            width: CANVAS_WIDTH,
+            height: CANVAS_HEIGHT,
             backgroundColor: 0x16213e,
             antialias: true,
             resolution: window.devicePixelRatio || 1,
@@ -186,8 +312,8 @@
             const container = document.getElementById('gameContainer');
             const info = document.getElementById('info');
             
-            const gameWidth = GRID_SIZE * CELL_SIZE;
-            const gameHeight = GRID_SIZE * CELL_SIZE;
+            const gameWidth = CANVAS_WIDTH;
+            const gameHeight = CANVAS_HEIGHT;
             
             // Get available space (accounting for info panel and padding)
             const infoHeight = info.offsetHeight;
@@ -289,9 +415,9 @@
 
         // Cell class
         class Cell {
-            constructor(row, col) {
-                this.row = row;
-                this.col = col;
+            constructor(q, r) {
+                this.q = q; // Hex column
+                this.r = r; // Hex row
                 this.owner = 'neutral'; // 'neutral', 'player', 'enemy'
                 this.units = [];
                 this.captureProgress = 0; // 0 to 100, progress towards capturing
@@ -300,10 +426,15 @@
                 this.shieldProgress = 0; // 0 to 100, progress towards breaking shield
                 this.shieldConsumeTimer = 0; // Timer for consuming units (1 unit per second)
                 
+                // Get pixel position for this hex
+                const pixelPos = hexToPixel(q, r);
+                const centerX = pixelPos.x + CANVAS_OFFSET_X;
+                const centerY = pixelPos.y + CANVAS_OFFSET_Y;
+                
                 // Create cell graphics
                 this.container = new PIXI.Container();
-                this.container.x = col * CELL_SIZE;
-                this.container.y = row * CELL_SIZE;
+                this.container.x = centerX;
+                this.container.y = centerY;
                 
                 // Background
                 this.bg = new PIXI.Graphics();
@@ -312,8 +443,7 @@
                 
                 // Border
                 this.border = new PIXI.Graphics();
-                this.border.lineStyle(2, COLORS.GRID, 1);
-                this.border.drawRect(0, 0, CELL_SIZE, CELL_SIZE);
+                this.updateBorder();
                 this.container.addChild(this.border);
                 
                 // Capture progress bar
@@ -328,8 +458,8 @@
                     fontWeight: 'bold'
                 });
                 this.unitText.anchor.set(0.5);
-                this.unitText.x = CELL_SIZE / 2;
-                this.unitText.y = CELL_SIZE / 2;
+                this.unitText.x = 0;
+                this.unitText.y = 0;
                 this.container.addChild(this.unitText);
                 
                 // Make interactive
@@ -339,24 +469,24 @@
                 app.stage.addChild(this.container);
             }
             
+            updateBorder() {
+                this.border.clear();
+                const borderColor = this.hasShield ? COLORS.SHIELD : COLORS.GRID;
+                drawHexagon(this.border, 0, 0, HEX_SIZE, undefined, undefined, borderColor, 2);
+            }
+            
             updateColor() {
                 this.bg.clear();
                 let color = COLORS.NEUTRAL;
                 if (this.owner === 'player') color = COLORS.PLAYER;
                 else if (this.owner === 'enemy') color = COLORS.ENEMY;
                 
-                // Draw normal background
-                this.bg.beginFill(color, 0.6);
-                this.bg.drawRect(0, 0, CELL_SIZE, CELL_SIZE);
-                this.bg.endFill();
+                // Draw hexagon background
+                drawHexagon(this.bg, 0, 0, HEX_SIZE, color, 0.6);
                 
-                // Update border color - gold if shield, normal grid color otherwise
-                // Only update if border exists (it's created after updateColor in constructor)
+                // Update border
                 if (this.border) {
-                    this.border.clear();
-                    const borderColor = this.hasShield ? COLORS.SHIELD : COLORS.GRID;
-                    this.border.lineStyle(2, borderColor, 1);
-                    this.border.drawRect(0, 0, CELL_SIZE, CELL_SIZE);
+                    this.updateBorder();
                 }
             }
             
@@ -409,6 +539,8 @@
                             // Then normal capture logic will neutralize it, then capture it
                             this.captureProgress = 100; // Set to 100 so it shows as fully owned
                             this.updateColor();
+                            // Reorder cells so shield cells (gold borders) are drawn on top
+                            reorderCells();
                         }
                     } else {
                         // Shield not being attacked - decay shield progress and reset timer
@@ -422,14 +554,14 @@
                     // Draw shield progress bar
                     this.progressBar.clear();
                     if (this.shieldProgress > 0 && this.shieldProgress < 100) {
-                        const barWidth = (CELL_SIZE - 10) * (this.shieldProgress / 100);
+                        const barWidth = (HEX_SIZE * 1.5) * (this.shieldProgress / 100);
                         // Background
                         this.progressBar.beginFill(0x000000, 0.3);
-                        this.progressBar.drawRect(5, CELL_SIZE - 15, CELL_SIZE - 10, 10);
+                        this.progressBar.drawRect(-HEX_SIZE * 0.75, HEX_SIZE * 0.6, HEX_SIZE * 1.5, 8);
                         this.progressBar.endFill();
                         // Shield progress (gold)
                         this.progressBar.beginFill(COLORS.SHIELD, 0.8);
-                        this.progressBar.drawRect(5, CELL_SIZE - 15, barWidth, 10);
+                        this.progressBar.drawRect(-HEX_SIZE * 0.75, HEX_SIZE * 0.6, barWidth, 8);
                         this.progressBar.endFill();
                     }
                     return; // Shield logic handled, exit early
@@ -504,32 +636,32 @@
                 
                 // Show progress bar during neutralization (owned -> neutral)
                 if (this.owner !== 'neutral' && this.capturingOwner && this.capturingOwner !== this.owner) {
-                    const barWidth = (CELL_SIZE - 10) * (this.captureProgress / 100);
+                    const barWidth = (HEX_SIZE * 1.5) * (this.captureProgress / 100);
                     let barColor = this.owner === 'player' ? COLORS.PLAYER : COLORS.ENEMY;
                     
                     // Background
                     this.progressBar.beginFill(0x000000, 0.3);
-                    this.progressBar.drawRect(5, CELL_SIZE - 15, CELL_SIZE - 10, 10);
+                    this.progressBar.drawRect(-HEX_SIZE * 0.75, HEX_SIZE * 0.6, HEX_SIZE * 1.5, 8);
                     this.progressBar.endFill();
                     
                     // Progress (shows how much ownership remains)
                     this.progressBar.beginFill(barColor, 0.8);
-                    this.progressBar.drawRect(5, CELL_SIZE - 15, barWidth, 10);
+                    this.progressBar.drawRect(-HEX_SIZE * 0.75, HEX_SIZE * 0.6, barWidth, 8);
                     this.progressBar.endFill();
                 }
                 // Show progress bar during capture (neutral -> owned)
                 else if (this.captureProgress > 0 && this.captureProgress < 100 && this.owner === 'neutral' && this.capturingOwner) {
-                    const barWidth = (CELL_SIZE - 10) * (this.captureProgress / 100);
+                    const barWidth = (HEX_SIZE * 1.5) * (this.captureProgress / 100);
                     let barColor = this.capturingOwner === 'player' ? COLORS.PLAYER : COLORS.ENEMY;
                     
                     // Background
                     this.progressBar.beginFill(0x000000, 0.3);
-                    this.progressBar.drawRect(5, CELL_SIZE - 15, CELL_SIZE - 10, 10);
+                    this.progressBar.drawRect(-HEX_SIZE * 0.75, HEX_SIZE * 0.6, HEX_SIZE * 1.5, 8);
                     this.progressBar.endFill();
                     
                     // Progress
                     this.progressBar.beginFill(barColor, 0.8);
-                    this.progressBar.drawRect(5, CELL_SIZE - 15, barWidth, 10);
+                    this.progressBar.drawRect(-HEX_SIZE * 0.75, HEX_SIZE * 0.6, barWidth, 8);
                     this.progressBar.endFill();
                 }
             }
@@ -541,8 +673,8 @@
             
             getCenterWorld() {
                 return {
-                    x: this.col * CELL_SIZE + CELL_SIZE / 2,
-                    y: this.row * CELL_SIZE + CELL_SIZE / 2
+                    x: this.container.x,
+                    y: this.container.y
                 };
             }
         }
@@ -588,11 +720,6 @@
                 if (this.isMoving) return;
                 
                 const center = this.cell.getCenterWorld();
-                // Allow movement in most of the cell, leaving small margin for boundaries
-                const cellMinX = this.cell.col * CELL_SIZE + UNIT_RADIUS + 5;
-                const cellMaxX = (this.cell.col + 1) * CELL_SIZE - UNIT_RADIUS - 5;
-                const cellMinY = this.cell.row * CELL_SIZE + UNIT_RADIUS + 5;
-                const cellMaxY = (this.cell.row + 1) * CELL_SIZE - UNIT_RADIUS - 5;
                 
                 // Calculate distance from center
                 const distFromCenterX = this.x - center.x;
@@ -603,27 +730,12 @@
                 // Original was 0.08 per frame at 60fps = 4.8 per second
                 this.velocityAngle += (Math.random() - 0.5) * 4.8 * GAME_SPEED * dt;
                 
-                // Steer away from boundaries smoothly (only when very close)
-                const margin = 8;
-                let steerX = 0;
-                let steerY = 0;
-                
-                if (this.x < cellMinX + margin) {
-                    steerX = 1; // Steer right
-                } else if (this.x > cellMaxX - margin) {
-                    steerX = -1; // Steer left
-                }
-                
-                if (this.y < cellMinY + margin) {
-                    steerY = 1; // Steer down
-                } else if (this.y > cellMaxY - margin) {
-                    steerY = -1; // Steer up
-                }
-                
-                // Apply boundary steering (gentler)
-                if (steerX !== 0 || steerY !== 0) {
-                    const desiredAngle = Math.atan2(steerY, steerX);
-                    this.velocityAngle = this.velocityAngle * 0.9 + desiredAngle * 0.1;
+                // Check if unit is near hexagon boundary
+                const maxDist = HEX_SIZE - UNIT_RADIUS - 5;
+                if (distFromCenter > maxDist) {
+                    // Steer back towards center
+                    const angleToCenter = Math.atan2(-distFromCenterY, -distFromCenterX);
+                    this.velocityAngle = this.velocityAngle * 0.9 + angleToCenter * 0.1;
                 }
                 
                 // Only gently steer back towards center if very far (much less aggressive)
@@ -640,9 +752,14 @@
                 this.x += this.vx * dt;
                 this.y += this.vy * dt;
                 
-                // Clamp position to cell bounds
-                this.x = Math.max(cellMinX, Math.min(cellMaxX, this.x));
-                this.y = Math.max(cellMinY, Math.min(cellMaxY, this.y));
+                // Clamp position to hexagon bounds (keep within hexagon)
+                const newDistFromCenter = Math.sqrt((this.x - center.x) ** 2 + (this.y - center.y) ** 2);
+                if (newDistFromCenter > maxDist) {
+                    // Project back onto hexagon boundary
+                    const angle = Math.atan2(this.y - center.y, this.x - center.x);
+                    this.x = center.x + Math.cos(angle) * maxDist;
+                    this.y = center.y + Math.sin(angle) * maxDist;
+                }
                 
                 this.updatePosition();
             }
@@ -701,40 +818,129 @@
 
         // Initialize grid
         function initGrid() {
-            for (let row = 0; row < GRID_SIZE; row++) {
-                gameState.cells[row] = [];
-                for (let col = 0; col < GRID_SIZE; col++) {
-                    gameState.cells[row][col] = new Cell(row, col);
+            gameState.cells = new Map(); // Use Map for hex coordinates
+            const hexGrid = generateHexGrid(GRID_SIZE);
+            hexGrid.forEach(hex => {
+                const key = `${hex.q},${hex.r}`;
+                gameState.cells.set(key, new Cell(hex.q, hex.r));
+            });
+        }
+        
+        // Get cell by hex coordinates
+        function getCellByHex(q, r) {
+            const key = `${q},${r}`;
+            return gameState.cells.get(key) || null;
+        }
+        
+        // Reorder cells so shield cells (gold borders) are drawn on top
+        function reorderCells() {
+            const cells = Array.from(gameState.cells.values());
+            const shieldCells = [];
+            const normalCells = [];
+            
+            // Collect all unit graphics and drag line to preserve their z-order
+            const units = [];
+            const dragLine = gameState.dragLine;
+            
+            // Collect all units from stage
+            gameState.units.forEach(unit => {
+                if (unit.graphics && app.stage.children.includes(unit.graphics)) {
+                    units.push(unit.graphics);
                 }
+            });
+            
+            // Remove units and drag line temporarily
+            units.forEach(graphics => {
+                app.stage.removeChild(graphics);
+            });
+            if (dragLine && app.stage.children.includes(dragLine)) {
+                app.stage.removeChild(dragLine);
+            }
+            
+            // Separate cells by shield status
+            cells.forEach(cell => {
+                if (cell.hasShield) {
+                    shieldCells.push(cell.container);
+                } else {
+                    normalCells.push(cell.container);
+                }
+            });
+            
+            // Remove all cells from stage
+            cells.forEach(cell => {
+                app.stage.removeChild(cell.container);
+            });
+            
+            // Add normal cells first, then shield cells (so shield cells are on top)
+            normalCells.forEach(container => {
+                app.stage.addChild(container);
+            });
+            shieldCells.forEach(container => {
+                app.stage.addChild(container);
+            });
+            
+            // Re-add units and drag line on top
+            units.forEach(graphics => {
+                app.stage.addChild(graphics);
+            });
+            if (dragLine) {
+                app.stage.addChild(dragLine);
             }
         }
 
         // Initialize units
         function initUnits() {
-            // Player units in bottom right (4, 4)
-            const playerCell = gameState.cells[4][4];
-            for (let i = 0; i < 5; i++) {
-                const unit = new Unit('player', playerCell);
-                gameState.units.push(unit);
-                gameState.playerTotalUnitsProduced++;
+            // Find player spawn cell (bottom right - maximum q+r)
+            let playerCell = null;
+            let maxSum = -Infinity;
+            for (const cell of gameState.cells.values()) {
+                const sum = cell.q + cell.r;
+                if (sum > maxSum) {
+                    maxSum = sum;
+                    playerCell = cell;
+                }
             }
-            playerCell.owner = 'player';
-            playerCell.hasShield = true; // Home tile starts with shield
-            playerCell.shieldProgress = 0;
-            playerCell.updateColor();
             
-            // Enemy units in top left (0, 0)
-            const enemyCell = gameState.cells[0][0];
-            const enemyUnitCount = DIFFICULTY_LEVEL === 3 ? 10 : 5;
-            for (let i = 0; i < enemyUnitCount; i++) {
-                const unit = new Unit('enemy', enemyCell);
-                gameState.units.push(unit);
-                gameState.enemyTotalUnitsProduced++;
+            if (playerCell) {
+                for (let i = 0; i < 5; i++) {
+                    const unit = new Unit('player', playerCell);
+                    gameState.units.push(unit);
+                    gameState.playerTotalUnitsProduced++;
+                }
+                playerCell.owner = 'player';
+                playerCell.hasShield = true; // Home tile starts with shield
+                playerCell.shieldProgress = 0;
+                playerCell.updateColor();
             }
-            enemyCell.owner = 'enemy';
-            enemyCell.hasShield = true; // Home tile starts with shield
-            enemyCell.shieldProgress = 0;
-            enemyCell.updateColor();
+            
+            // Find enemy spawn cell - farthest from player (opposite corner, top-left)
+            // In hex grid, find the topmost cell (minimum r), then leftmost (minimum q)
+            let enemyCell = null;
+            let minR = Infinity;
+            for (const cell of gameState.cells.values()) {
+                if (cell.r < minR) {
+                    minR = cell.r;
+                    enemyCell = cell;
+                } else if (cell.r === minR && cell.q < enemyCell.q) {
+                    enemyCell = cell;
+                }
+            }
+            
+            if (enemyCell) {
+                const enemyUnitCount = DIFFICULTY_LEVEL === 3 ? 10 : 5;
+                for (let i = 0; i < enemyUnitCount; i++) {
+                    const unit = new Unit('enemy', enemyCell);
+                    gameState.units.push(unit);
+                    gameState.enemyTotalUnitsProduced++;
+                }
+                enemyCell.owner = 'enemy';
+                enemyCell.hasShield = true; // Home tile starts with shield
+                enemyCell.shieldProgress = 0;
+                enemyCell.updateColor();
+            }
+            
+            // Reorder cells so shield cells (gold borders) are drawn on top
+            reorderCells();
         }
 
         // Input handling
@@ -757,8 +963,8 @@
             const rect = canvas.getBoundingClientRect();
             
             // Get the actual canvas dimensions (game space)
-            const gameWidth = GRID_SIZE * CELL_SIZE;
-            const gameHeight = GRID_SIZE * CELL_SIZE;
+            const gameWidth = CANVAS_WIDTH;
+            const gameHeight = CANVAS_HEIGHT;
             
             // Get the displayed canvas dimensions (CSS scaled)
             const displayWidth = rect.width;
@@ -776,11 +982,35 @@
         }
 
         function getCellFromPosition(x, y) {
-            const col = Math.floor(x / CELL_SIZE);
-            const row = Math.floor(y / CELL_SIZE);
-            if (row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE) {
-                return gameState.cells[row][col];
+            // First, try to find the cell by checking all hexagons directly
+            // This is more reliable than coordinate conversion
+            let closestCell = null;
+            let closestDistance = Infinity;
+            
+            for (const cell of gameState.cells.values()) {
+                const center = cell.getCenterWorld();
+                const dx = x - center.x;
+                const dy = y - center.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Check if point is inside hexagon
+                if (pointInHexagon(x, y, center.x, center.y, HEX_SIZE)) {
+                    return cell; // Found exact match
+                }
+                
+                // Track closest cell as fallback
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestCell = cell;
+                }
             }
+            
+            // If no exact match, return closest cell if it's reasonably close
+            // This helps with edge cases where clicking near boundaries
+            if (closestCell && closestDistance <= HEX_SIZE * 1.2) {
+                return closestCell;
+            }
+            
             return null;
         }
 
@@ -928,12 +1158,9 @@
                 gameState.aiMoveTimer = 0;
                 
                 const enemyCells = [];
-                for (let row = 0; row < GRID_SIZE; row++) {
-                    for (let col = 0; col < GRID_SIZE; col++) {
-                        const cell = gameState.cells[row][col];
-                        if (cell.owner === 'enemy' && cell.units.length > 0) {
-                            enemyCells.push(cell);
-                        }
+                for (const cell of gameState.cells.values()) {
+                    if (cell.owner === 'enemy' && cell.units.length > 0) {
+                        enemyCells.push(cell);
                     }
                 }
                 
@@ -941,13 +1168,14 @@
                     const fromCell = enemyCells[Math.floor(Math.random() * enemyCells.length)];
                     const adjacentCells = [];
                     
-                    // Get adjacent cells
-                    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-                    directions.forEach(([dr, dc]) => {
-                        const newRow = fromCell.row + dr;
-                        const newCol = fromCell.col + dc;
-                        if (newRow >= 0 && newRow < GRID_SIZE && newCol >= 0 && newCol < GRID_SIZE) {
-                            adjacentCells.push(gameState.cells[newRow][newCol]);
+                    // Get adjacent hex cells (6 neighbors)
+                    const neighbors = getHexNeighbors(fromCell.q, fromCell.r);
+                    neighbors.forEach(neighbor => {
+                        if (isHexInBounds(neighbor.q, neighbor.r, GRID_SIZE)) {
+                            const cell = getCellByHex(neighbor.q, neighbor.r);
+                            if (cell) {
+                                adjacentCells.push(cell);
+                            }
                         }
                     });
                     
@@ -968,11 +1196,9 @@
         // Count owned cells
         function countOwnedCells(owner) {
             let count = 0;
-            for (let row = 0; row < GRID_SIZE; row++) {
-                for (let col = 0; col < GRID_SIZE; col++) {
-                    if (gameState.cells[row][col].owner === owner) {
-                        count++;
-                    }
+            for (const cell of gameState.cells.values()) {
+                if (cell.owner === owner) {
+                    count++;
                 }
             }
             return count;
@@ -982,30 +1208,48 @@
         function spawnUnits(dt) {
             if (gameState.gameOver || !gameState.isPlaying) return; // Don't spawn if game is over or not playing
             
-            // Player spawning in bottom right (4, 4)
+            // Player spawning - find player spawn cell (maximum q+r)
             gameState.playerSpawnTimer += dt;
             const playerCells = countOwnedCells('player');
             const playerSpawnRate = Math.max(0.5 / GAME_SPEED, BASE_SPAWN_RATE - (playerCells * SPAWN_RATE_PER_CELL));
             
             if (gameState.playerSpawnTimer >= playerSpawnRate) {
                 gameState.playerSpawnTimer = 0;
-                const spawnCell = gameState.cells[4][4];
-                if (spawnCell.owner === 'player') {
+                let spawnCell = null;
+                let maxSum = -Infinity;
+                for (const cell of gameState.cells.values()) {
+                    const sum = cell.q + cell.r;
+                    if (sum > maxSum) {
+                        maxSum = sum;
+                        spawnCell = cell;
+                    }
+                }
+                if (spawnCell && spawnCell.owner === 'player') {
                     const unit = new Unit('player', spawnCell);
                     gameState.units.push(unit);
                     gameState.playerTotalUnitsProduced++;
                 }
             }
             
-            // Enemy spawning in top left (0, 0)
+            // Enemy spawning - find enemy spawn cell (top-left corner)
+            // Find the topmost cell (minimum r), then leftmost (minimum q)
             gameState.enemySpawnTimer += dt;
             const enemyCells = countOwnedCells('enemy');
             const enemySpawnRate = Math.max(0.5 / GAME_SPEED, BASE_SPAWN_RATE - (enemyCells * SPAWN_RATE_PER_CELL));
             
             if (gameState.enemySpawnTimer >= enemySpawnRate) {
                 gameState.enemySpawnTimer = 0;
-                const spawnCell = gameState.cells[0][0];
-                if (spawnCell.owner === 'enemy') {
+                let spawnCell = null;
+                let minR = Infinity;
+                for (const cell of gameState.cells.values()) {
+                    if (cell.r < minR) {
+                        minR = cell.r;
+                        spawnCell = cell;
+                    } else if (cell.r === minR && spawnCell && cell.q < spawnCell.q) {
+                        spawnCell = cell;
+                    }
+                }
+                if (spawnCell && spawnCell.owner === 'enemy') {
                     const unit = new Unit('enemy', spawnCell);
                     gameState.units.push(unit);
                     gameState.enemyTotalUnitsProduced++;
@@ -1017,7 +1261,7 @@
         function checkGameOver() {
             if (gameState.gameOver || !gameState.isPlaying) return; // Already game over or not playing
             
-            const totalCells = GRID_SIZE * GRID_SIZE;
+            const totalCells = gameState.cells.size;
             const playerCells = countOwnedCells('player');
             const enemyCells = countOwnedCells('enemy');
             
@@ -1054,12 +1298,10 @@
             });
             
             // Clean up all cells
-            gameState.cells.forEach(row => {
-                row.forEach(cell => {
-                    app.stage.removeChild(cell.container);
-                    cell.container.destroy({ children: true });
-                });
-            });
+            for (const cell of gameState.cells.values()) {
+                app.stage.removeChild(cell.container);
+                cell.container.destroy({ children: true });
+            }
             
             // Clean up drag line if it exists
             if (gameState.dragLine) {
@@ -1109,33 +1351,30 @@
             });
             
             // Handle unit conflicts and capture progress
-            for (let row = 0; row < GRID_SIZE; row++) {
-                for (let col = 0; col < GRID_SIZE; col++) {
-                    const cell = gameState.cells[row][col];
-                    const playerUnits = cell.units.filter(u => u.owner === 'player');
-                    const enemyUnits = cell.units.filter(u => u.owner === 'enemy');
+            for (const cell of gameState.cells.values()) {
+                const playerUnits = cell.units.filter(u => u.owner === 'player');
+                const enemyUnits = cell.units.filter(u => u.owner === 'enemy');
+                
+                // Combat: units destroy each other
+                if (playerUnits.length > 0 && enemyUnits.length > 0) {
+                    const minCount = Math.min(playerUnits.length, enemyUnits.length);
                     
-                    // Combat: units destroy each other
-                    if (playerUnits.length > 0 && enemyUnits.length > 0) {
-                        const minCount = Math.min(playerUnits.length, enemyUnits.length);
+                    for (let i = 0; i < minCount; i++) {
+                        // Remove units
+                        const pUnit = playerUnits[i];
+                        const eUnit = enemyUnits[i];
                         
-                        for (let i = 0; i < minCount; i++) {
-                            // Remove units
-                            const pUnit = playerUnits[i];
-                            const eUnit = enemyUnits[i];
-                            
-                            pUnit.destroy();
-                            eUnit.destroy();
-                            
-                            gameState.units = gameState.units.filter(u => u !== pUnit && u !== eUnit);
-                            cell.units = cell.units.filter(u => u !== pUnit && u !== eUnit);
-                        }
+                        pUnit.destroy();
+                        eUnit.destroy();
+                        
+                        gameState.units = gameState.units.filter(u => u !== pUnit && u !== eUnit);
+                        cell.units = cell.units.filter(u => u !== pUnit && u !== eUnit);
                     }
-                    
-                    // Update capture progress and unit count
-                    cell.updateCaptureProgress(dt);
-                    cell.updateUnitCount();
                 }
+                
+                // Update capture progress and unit count
+                cell.updateCaptureProgress(dt);
+                cell.updateUnitCount();
             }
             
             // Spawn units based on owned cells
