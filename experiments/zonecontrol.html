@@ -36,6 +36,61 @@
             max-width: 500px;
             box-sizing: border-box;
         }
+        #difficultySelector {
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        #difficultySelector label {
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .difficultyButton {
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 2px solid #4A90E2;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .difficultyButton:hover:not(:disabled) {
+            background: rgba(74, 144, 226, 0.3);
+            border-color: #357ABD;
+        }
+        .difficultyButton.selected {
+            background: #4A90E2;
+            border-color: #357ABD;
+        }
+        .difficultyButton:disabled {
+            color: #888;
+            cursor: not-allowed;
+            opacity: 0.5;
+            font-style: italic;
+        }
+        #newGameButton {
+            background: #4A90E2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 10px;
+            transition: background 0.3s;
+        }
+        #newGameButton:hover {
+            background: #357ABD;
+        }
+        #newGameButton:active {
+            background: #2E5C8A;
+        }
         canvas {
             touch-action: none;
             user-select: none;
@@ -59,19 +114,24 @@
 </head>
 <body>
     <div id="gameContainer">
+        <div id="difficultySelector">
+            <label>Difficulty:</label>
+            <button class="difficultyButton" data-level="0">Baby</button>
+            <button class="difficultyButton selected" data-level="1">Normal</button>
+            <button class="difficultyButton" data-level="2">Hard</button>
+            <button class="difficultyButton" data-level="3" id="godButton" disabled>God</button>
+        </div>
+        <button id="newGameButton">New Game</button>
         <div id="info">
-            <div>Player Units: <span id="playerUnits">5</span></div>
-            <div>Enemy Units: <span id="enemyUnits">5</span></div>
+            <div>Player Units: <span id="playerUnits">0</span></div>
+            <div>Enemy Units: <span id="enemyUnits">0</span></div>
             <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.3);">
-                <div>Blue Tiles: <span id="blueTiles">1</span></div>
-                <div>Red Tiles: <span id="redTiles">1</span></div>
-            </div>
-            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.3);">
-                <div>Total Units Produced (Player): <span id="playerTotalProduced">0</span></div>
-                <div>Total Units Produced (Enemy): <span id="enemyTotalProduced">0</span></div>
+                <div>Blue Tiles: <span id="blueTiles">0</span></div>
+                <div>Red Tiles: <span id="redTiles">0</span></div>
             </div>
             <div style="margin-top: 10px; font-size: 12px;">
-                Click and drag from your cells to send units!
+                Click and drag from your cells to send units!<br>
+                The more zones you control, the faster you gain units.
             </div>
         </div>
     </div>
@@ -81,12 +141,16 @@
         const GRID_SIZE = 5;
         const CELL_SIZE = 100;
         const UNIT_RADIUS = 4;
-        const UNIT_SPEED = 1.15;
-        const UNIT_WANDER_SPEED = 0.35;
+        const GAME_SPEED = 1.75; // Game speed multiplier (1.0 = normal speed)
+        const UNIT_SPEED = 69 * GAME_SPEED; // Pixels per second
+        const UNIT_WANDER_SPEED = 21 * GAME_SPEED; // Pixels per second
         const UNIT_WANDER_RADIUS = 40;
-        const BASE_SPAWN_RATE = 270; // Frames between spawns 
-        const SPAWN_RATE_PER_CELL = 9; // Faster spawn per owned cell
-        const CAPTURE_RATE = 0.15; // How fast cells are captured/neutralized (higher = faster)
+        const BASE_SPAWN_RATE = 4.5 / GAME_SPEED; // Seconds between spawns (at 60fps, 270 frames = 4.5 seconds)
+        const SPAWN_RATE_PER_CELL = 0.15 / GAME_SPEED; // Seconds faster spawn per owned cell (at 60fps, 9 frames = 0.15 seconds)
+        const CAPTURE_RATE = 9 * GAME_SPEED; // How fast cells are captured/neutralized per second (higher = faster)
+
+        // Difficulty level (0 = Baby, 1 = Normal, 2 = Hard, 3 = God)
+        let DIFFICULTY_LEVEL = 1; // Default to Normal
 
         // Colors
         const COLORS = {
@@ -95,7 +159,8 @@
             ENEMY: 0xE74C3C,
             GRID: 0x2C3E50,
             UNIT_PLAYER: 0x2E5C8A,
-            UNIT_ENEMY: 0xA93226
+            UNIT_ENEMY: 0xA93226,
+            SHIELD: 0xFFD700 // Gold color for shield
         };
 
         // Initialize PixiJS application
@@ -214,9 +279,12 @@
             isDragging: false,
             playerSpawnTimer: 0,
             enemySpawnTimer: 0,
+            aiMoveTimer: 0,
+            aiNextMoveDelay: 0,
             playerTotalUnitsProduced: 0,
             enemyTotalUnitsProduced: 0,
-            gameOver: false
+            gameOver: false,
+            isPlaying: false
         };
 
         // Cell class
@@ -228,6 +296,9 @@
                 this.units = [];
                 this.captureProgress = 0; // 0 to 100, progress towards capturing
                 this.capturingOwner = null; // Who is trying to capture this cell
+                this.hasShield = false; // Whether this cell has a shield
+                this.shieldProgress = 0; // 0 to 100, progress towards breaking shield
+                this.shieldConsumeTimer = 0; // Timer for consuming units (1 unit per second)
                 
                 // Create cell graphics
                 this.container = new PIXI.Container();
@@ -274,12 +345,22 @@
                 if (this.owner === 'player') color = COLORS.PLAYER;
                 else if (this.owner === 'enemy') color = COLORS.ENEMY;
                 
+                // Draw normal background
                 this.bg.beginFill(color, 0.6);
                 this.bg.drawRect(0, 0, CELL_SIZE, CELL_SIZE);
                 this.bg.endFill();
+                
+                // Update border color - gold if shield, normal grid color otherwise
+                // Only update if border exists (it's created after updateColor in constructor)
+                if (this.border) {
+                    this.border.clear();
+                    const borderColor = this.hasShield ? COLORS.SHIELD : COLORS.GRID;
+                    this.border.lineStyle(2, borderColor, 1);
+                    this.border.drawRect(0, 0, CELL_SIZE, CELL_SIZE);
+                }
             }
             
-            updateCaptureProgress() {
+            updateCaptureProgress(dt) {
                 const playerUnits = this.units.filter(u => u.owner === 'player').length;
                 const enemyUnits = this.units.filter(u => u.owner === 'enemy').length;
                 
@@ -295,6 +376,66 @@
                     unitAdvantage = enemyUnits - playerUnits;
                 }
                 
+                // Handle shield logic first
+                if (this.hasShield) {
+                    // Determine if shield is being attacked
+                    // Shield protects the cell's owner, so it's attacked when opponent has more units
+                    const isShieldAttacked = dominantOwner && dominantOwner !== this.owner && unitAdvantage > 0;
+                    
+                    if (isShieldAttacked) {
+                        // Shield is being attacked - break it (5x slower)
+                        this.shieldProgress += unitAdvantage * (CAPTURE_RATE / 5) * dt;
+                        
+                        // Consume 1 unit per second from attacking units
+                        // Track accumulated time for unit consumption
+                        this.shieldConsumeTimer += dt;
+                        if (this.shieldConsumeTimer >= 1.0) {
+                            this.shieldConsumeTimer = 0;
+                            const attackingUnits = this.units.filter(u => u.owner === dominantOwner);
+                            if (attackingUnits.length > 0) {
+                                const unit = attackingUnits[0];
+                                unit.destroy();
+                                gameState.units = gameState.units.filter(u => u !== unit);
+                                this.units = this.units.filter(u => u !== unit);
+                            }
+                        }
+                        
+                        if (this.shieldProgress >= 100) {
+                            // Shield broken! Keep the owner, let normal capture logic handle owner -> neutral -> new owner
+                            this.hasShield = false;
+                            this.shieldProgress = 0;
+                            this.shieldConsumeTimer = 0; // Reset timer
+                            // Don't change owner - let it show the original owner's color first
+                            // Then normal capture logic will neutralize it, then capture it
+                            this.captureProgress = 100; // Set to 100 so it shows as fully owned
+                            this.updateColor();
+                        }
+                    } else {
+                        // Shield not being attacked - decay shield progress and reset timer
+                        if (this.shieldProgress > 0) {
+                            this.shieldProgress -= 12 * GAME_SPEED * dt;
+                            if (this.shieldProgress < 0) this.shieldProgress = 0;
+                        }
+                        this.shieldConsumeTimer = 0; // Reset timer when not being attacked
+                    }
+                    
+                    // Draw shield progress bar
+                    this.progressBar.clear();
+                    if (this.shieldProgress > 0 && this.shieldProgress < 100) {
+                        const barWidth = (CELL_SIZE - 10) * (this.shieldProgress / 100);
+                        // Background
+                        this.progressBar.beginFill(0x000000, 0.3);
+                        this.progressBar.drawRect(5, CELL_SIZE - 15, CELL_SIZE - 10, 10);
+                        this.progressBar.endFill();
+                        // Shield progress (gold)
+                        this.progressBar.beginFill(COLORS.SHIELD, 0.8);
+                        this.progressBar.drawRect(5, CELL_SIZE - 15, barWidth, 10);
+                        this.progressBar.endFill();
+                    }
+                    return; // Shield logic handled, exit early
+                }
+                
+                // Normal capture logic (when no shield)
                 // If cell is already owned by dominant owner, maintain ownership
                 if (dominantOwner === this.owner) {
                     this.captureProgress = 100;
@@ -321,7 +462,7 @@
                     // If cell is owned by opponent, first neutralize it
                     if (this.owner !== 'neutral') {
                         // Decrease progress (neutralizing the cell)
-                        this.captureProgress -= unitAdvantage * CAPTURE_RATE;
+                        this.captureProgress -= unitAdvantage * CAPTURE_RATE * dt;
                         
                         if (this.captureProgress <= 0) {
                             this.owner = 'neutral';
@@ -330,7 +471,7 @@
                         }
                     } else {
                         // Cell is neutral, now capture it
-                        this.captureProgress += unitAdvantage * CAPTURE_RATE;
+                        this.captureProgress += unitAdvantage * CAPTURE_RATE * dt;
                         
                         if (this.captureProgress >= 100) {
                             this.captureProgress = 100;
@@ -347,11 +488,12 @@
                 }
                 // Neutral cell with equal or no units
                 else {
-                    // Slowly decay capture progress
-                    if (this.captureProgress > 0) {
-                        this.captureProgress -= 0.2;
-                        if (this.captureProgress < 0) this.captureProgress = 0;
-                    }
+                // Slowly decay capture progress
+                // Original was 0.2 per frame at 60fps = 12 per second
+                if (this.captureProgress > 0) {
+                    this.captureProgress -= 12 * GAME_SPEED * dt;
+                    if (this.captureProgress < 0) this.captureProgress = 0;
+                }
                     if (this.captureProgress === 0) {
                         this.capturingOwner = null;
                     }
@@ -442,7 +584,7 @@
                 this.graphics.y = this.y;
             }
             
-            wander() {
+            wander(dt) {
                 if (this.isMoving) return;
                 
                 const center = this.cell.getCenterWorld();
@@ -458,7 +600,8 @@
                 const distFromCenter = Math.sqrt(distFromCenterX * distFromCenterX + distFromCenterY * distFromCenterY);
                 
                 // Steering behavior: gradually change direction (random wander)
-                this.velocityAngle += (Math.random() - 0.5) * 0.08;
+                // Original was 0.08 per frame at 60fps = 4.8 per second
+                this.velocityAngle += (Math.random() - 0.5) * 4.8 * GAME_SPEED * dt;
                 
                 // Steer away from boundaries smoothly (only when very close)
                 const margin = 8;
@@ -493,9 +636,9 @@
                 this.vx = Math.cos(this.velocityAngle) * UNIT_WANDER_SPEED;
                 this.vy = Math.sin(this.velocityAngle) * UNIT_WANDER_SPEED;
                 
-                // Move based on velocity
-                this.x += this.vx;
-                this.y += this.vy;
+                // Move based on velocity (scaled by delta time)
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
                 
                 // Clamp position to cell bounds
                 this.x = Math.max(cellMinX, Math.min(cellMaxX, this.x));
@@ -516,14 +659,17 @@
                 this.cell = null;
             }
             
-            update() {
+            update(deltaTime) {
+                const dt = deltaTime / 1000; // Convert milliseconds to seconds
+                
                 if (this.isMoving && this.targetCell) {
                     const target = this.targetCell.getCenterWorld();
                     const dx = target.x - this.x;
                     const dy = target.y - this.y;
                     const dist = Math.sqrt(dx * dx + dy * dy);
                     
-                    if (dist < UNIT_SPEED) {
+                    const moveDistance = UNIT_SPEED * dt;
+                    if (dist < moveDistance) {
                         // Arrived at destination
                         this.x = target.x;
                         this.y = target.y;
@@ -538,12 +684,12 @@
                         this.vy = Math.sin(this.velocityAngle) * UNIT_WANDER_SPEED;
                     } else {
                         // Move towards target
-                        this.x += (dx / dist) * UNIT_SPEED;
-                        this.y += (dy / dist) * UNIT_SPEED;
+                        this.x += (dx / dist) * moveDistance;
+                        this.y += (dy / dist) * moveDistance;
                     }
                     this.updatePosition();
                 } else {
-                    this.wander();
+                    this.wander(dt);
                 }
             }
             
@@ -573,6 +719,8 @@
                 gameState.playerTotalUnitsProduced++;
             }
             playerCell.owner = 'player';
+            playerCell.hasShield = true; // Home tile starts with shield
+            playerCell.shieldProgress = 0;
             playerCell.updateColor();
             
             // Enemy units in top left (0, 0)
@@ -583,6 +731,8 @@
                 gameState.enemyTotalUnitsProduced++;
             }
             enemyCell.owner = 'enemy';
+            enemyCell.hasShield = true; // Home tile starts with shield
+            enemyCell.shieldProgress = 0;
             enemyCell.updateColor();
         }
 
@@ -634,7 +784,7 @@
         }
 
         function onMouseDown(event) {
-            if (gameState.gameOver) return; // Don't allow input when game is over
+            if (gameState.gameOver || !gameState.isPlaying) return; // Don't allow input when game is over or not playing
             
             const coords = screenToGameCoords(event.clientX, event.clientY);
             
@@ -689,7 +839,7 @@
         // Touch event handlers
         function onTouchStart(event) {
             event.preventDefault(); // Prevent scrolling and zooming
-            if (gameState.gameOver) return; // Don't allow input when game is over
+            if (gameState.gameOver || !gameState.isPlaying) return; // Don't allow input when game is over or not playing
             
             const touch = event.touches[0];
             const coords = screenToGameCoords(touch.clientX, touch.clientY);
@@ -759,18 +909,23 @@
             const redTiles = countOwnedCells('enemy');
             document.getElementById('blueTiles').textContent = blueTiles;
             document.getElementById('redTiles').textContent = redTiles;
-            
-            // Update total units produced
-            document.getElementById('playerTotalProduced').textContent = gameState.playerTotalUnitsProduced;
-            document.getElementById('enemyTotalProduced').textContent = gameState.enemyTotalUnitsProduced;
         }
 
         // Simple AI for enemy
-        function updateAI() {
-            if (gameState.gameOver) return; // Don't update AI if game is over
+        function updateAI(dt) {
+            if (gameState.gameOver || !gameState.isPlaying) return; // Don't update AI if game is over or not playing
             
-            // Every 3 seconds, move units from a random enemy cell to an adjacent cell
-            if (Math.random() < 0.01) {
+            // Initialize delay on first call
+            if (gameState.aiNextMoveDelay === 0) {
+                // Random delay between 2-4 seconds
+                gameState.aiNextMoveDelay = (2 + Math.random() * 2) / GAME_SPEED;
+            }
+            
+            // Check if it's time to make a move
+            gameState.aiMoveTimer += dt;
+            if (gameState.aiMoveTimer >= gameState.aiNextMoveDelay) {
+                gameState.aiMoveTimer = 0;
+                
                 const enemyCells = [];
                 for (let row = 0; row < GRID_SIZE; row++) {
                     for (let col = 0; col < GRID_SIZE; col++) {
@@ -803,6 +958,9 @@
                         });
                     }
                 }
+                
+                // Set next random delay between 2-4 seconds
+                gameState.aiNextMoveDelay = (2 + Math.random() * 2) / GAME_SPEED;
             }
         }
 
@@ -820,13 +978,13 @@
         }
 
         // Spawn units
-        function spawnUnits() {
-            if (gameState.gameOver) return; // Don't spawn if game is over
+        function spawnUnits(dt) {
+            if (gameState.gameOver || !gameState.isPlaying) return; // Don't spawn if game is over or not playing
             
             // Player spawning in bottom right (4, 4)
-            gameState.playerSpawnTimer++;
+            gameState.playerSpawnTimer += dt;
             const playerCells = countOwnedCells('player');
-            const playerSpawnRate = Math.max(30, BASE_SPAWN_RATE - (playerCells * SPAWN_RATE_PER_CELL));
+            const playerSpawnRate = Math.max(0.5 / GAME_SPEED, BASE_SPAWN_RATE - (playerCells * SPAWN_RATE_PER_CELL));
             
             if (gameState.playerSpawnTimer >= playerSpawnRate) {
                 gameState.playerSpawnTimer = 0;
@@ -839,9 +997,9 @@
             }
             
             // Enemy spawning in top left (0, 0)
-            gameState.enemySpawnTimer++;
+            gameState.enemySpawnTimer += dt;
             const enemyCells = countOwnedCells('enemy');
-            const enemySpawnRate = Math.max(30, BASE_SPAWN_RATE - (enemyCells * SPAWN_RATE_PER_CELL));
+            const enemySpawnRate = Math.max(0.5 / GAME_SPEED, BASE_SPAWN_RATE - (enemyCells * SPAWN_RATE_PER_CELL));
             
             if (gameState.enemySpawnTimer >= enemySpawnRate) {
                 gameState.enemySpawnTimer = 0;
@@ -856,7 +1014,7 @@
 
         // Check for win/lose conditions
         function checkGameOver() {
-            if (gameState.gameOver) return; // Already game over
+            if (gameState.gameOver || !gameState.isPlaying) return; // Already game over or not playing
             
             const totalCells = GRID_SIZE * GRID_SIZE;
             const playerCells = countOwnedCells('player');
@@ -864,15 +1022,25 @@
             
             if (playerCells === totalCells) {
                 gameState.gameOver = true;
+                gameState.isPlaying = false;
+                
+                // If player won on Hard difficulty, unlock God mode
+                if (DIFFICULTY_LEVEL === 2) {
+                    localStorage.setItem('hardBeaten', 'true');
+                    updateDifficultySelector();
+                }
+                
+                updateDifficultyButtonsState();
+                
                 setTimeout(() => {
                     alert('You win!');
-                    restartGame();
                 }, 100);
             } else if (enemyCells === totalCells) {
                 gameState.gameOver = true;
+                gameState.isPlaying = false;
+                updateDifficultyButtonsState();
                 setTimeout(() => {
                     alert('You lose!');
-                    restartGame();
                 }, 100);
             }
         }
@@ -906,21 +1074,37 @@
             gameState.isDragging = false;
             gameState.playerSpawnTimer = 0;
             gameState.enemySpawnTimer = 0;
+            gameState.aiMoveTimer = 0;
+            gameState.aiNextMoveDelay = 0;
             gameState.playerTotalUnitsProduced = 0;
             gameState.enemyTotalUnitsProduced = 0;
             gameState.gameOver = false;
+            gameState.isPlaying = true;
             
             // Reinitialize
             initGrid();
             initUnits();
             updateUI();
+            updateDifficultyButtonsState(); // Disable buttons when game starts
+        }
+
+        // Start a new game
+        function startNewGame() {
+            restartGame();
         }
 
         // Game loop
-        app.ticker.add(() => {
+        app.ticker.add((ticker) => {
+            if (!gameState.isPlaying) return; // Don't update game if not playing
+            
+            // Get delta time in seconds (PixiJS ticker.elapsedMS is in milliseconds)
+            // Clamp delta time to prevent huge jumps on first frame or lag spikes
+            const rawDt = (ticker.elapsedMS || 16.67) / 1000; // Default to ~60fps if undefined
+            const dt = Math.min(rawDt, 0.1); // Cap at 100ms (10fps minimum) to prevent issues
+            
             // Update all units
             gameState.units.forEach(unit => {
-                unit.update();
+                unit.update(ticker.elapsedMS || 16.67);
             });
             
             // Handle unit conflicts and capture progress
@@ -948,24 +1132,87 @@
                     }
                     
                     // Update capture progress and unit count
-                    cell.updateCaptureProgress();
+                    cell.updateCaptureProgress(dt);
                     cell.updateUnitCount();
                 }
             }
             
             // Spawn units based on owned cells
-            spawnUnits();
+            spawnUnits(dt);
             
-            updateAI();
+            updateAI(dt);
             updateUI();
             
             // Check for win/lose conditions
             checkGameOver();
         });
 
-        // Initialize game
+        // Update selected button state
+        function updateSelectedButton() {
+            const buttons = document.querySelectorAll('.difficultyButton');
+            buttons.forEach(button => {
+                const level = parseInt(button.getAttribute('data-level'));
+                if (level === DIFFICULTY_LEVEL) {
+                    button.classList.add('selected');
+                } else {
+                    button.classList.remove('selected');
+                }
+            });
+        }
+
+        // Update difficulty buttons enabled/disabled state based on game state
+        function updateDifficultyButtonsState() {
+            const buttons = document.querySelectorAll('.difficultyButton');
+            buttons.forEach(button => {
+                // Disable if game is playing, but preserve the unlock state for God button
+                if (gameState.isPlaying) {
+                    button.disabled = true;
+                } else {
+                    // Re-enable, but check unlock status for God button
+                    const level = parseInt(button.getAttribute('data-level'));
+                    if (level === 3) {
+                        const hardBeaten = localStorage.getItem('hardBeaten') === 'true';
+                        button.disabled = !hardBeaten;
+                    } else {
+                        button.disabled = false;
+                    }
+                }
+            });
+        }
+
+        // Update difficulty selector based on unlock status
+        function updateDifficultySelector() {
+            const hardBeaten = localStorage.getItem('hardBeaten') === 'true';
+            
+            // If God is currently selected but not unlocked, switch to Normal
+            if (!hardBeaten && DIFFICULTY_LEVEL === 3) {
+                DIFFICULTY_LEVEL = 1;
+                updateSelectedButton();
+            }
+            
+            // Update button states (handles both unlock status and game playing state)
+            updateDifficultyButtonsState();
+        }
+
+        // Setup difficulty buttons
+        const difficultyButtons = document.querySelectorAll('.difficultyButton');
+        difficultyButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                if (button.disabled || gameState.isPlaying) return;
+                DIFFICULTY_LEVEL = parseInt(button.getAttribute('data-level'));
+                updateSelectedButton();
+            });
+        });
+
+        // Setup New Game button
+        document.getElementById('newGameButton').addEventListener('click', startNewGame);
+
+        // Initialize difficulty selector on page load
+        updateSelectedButton();
+        updateDifficultySelector();
+
+        // Initialize game (but don't start playing)
         initGrid();
-        initUnits();
         setupInput();
         updateUI();
     </script>
