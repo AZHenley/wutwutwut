@@ -109,6 +109,12 @@
         });
         document.getElementById('gameContainer').appendChild(app.view);
         
+        // Base values for info panel (scoreboard)
+        const INFO_BASE_FONT_SIZE = 14;
+        const INFO_BASE_PADDING = 10;
+        const INFO_BASE_MAX_WIDTH = 500;
+        const INFO_BASE_BORDER_RADIUS = 5;
+        
         // Function to scale canvas to fit viewport on mobile
         function scaleCanvas() {
             const canvas = app.view;
@@ -129,7 +135,7 @@
             const scaleY = availableHeight / gameHeight;
             const scale = Math.min(scaleX, scaleY, 1); // Don't scale up on desktop
             
-            // Only apply scaling on mobile (when scale < 1)
+            // Apply scaling to canvas
             if (scale < 1) {
                 canvas.style.width = (gameWidth * scale) + 'px';
                 canvas.style.height = (gameHeight * scale) + 'px';
@@ -137,6 +143,58 @@
                 // On desktop, use original size
                 canvas.style.width = gameWidth + 'px';
                 canvas.style.height = gameHeight + 'px';
+            }
+            
+            // Apply same scaling to info panel (scoreboard)
+            const BASE_SPACING = 10;
+            const BASE_INSTRUCTION_FONT = 12;
+            
+            if (scale < 1) {
+                info.style.fontSize = (INFO_BASE_FONT_SIZE * scale) + 'px';
+                info.style.padding = (INFO_BASE_PADDING * scale) + 'px';
+                info.style.maxWidth = (INFO_BASE_MAX_WIDTH * scale) + 'px';
+                info.style.borderRadius = (INFO_BASE_BORDER_RADIUS * scale) + 'px';
+                info.style.marginBottom = (BASE_SPACING * scale) + 'px';
+                
+                // Scale spacing in child divs (margin-top and padding-top)
+                const childDivs = info.querySelectorAll('div > div');
+                childDivs.forEach(div => {
+                    if (div.style.marginTop && div.style.marginTop.includes('px')) {
+                        div.style.marginTop = (BASE_SPACING * scale) + 'px';
+                    }
+                    if (div.style.paddingTop && div.style.paddingTop.includes('px')) {
+                        div.style.paddingTop = (BASE_SPACING * scale) + 'px';
+                    }
+                });
+                
+                // Scale the instruction text font size
+                const instructionDiv = info.querySelector('div:last-child');
+                if (instructionDiv && instructionDiv.style.fontSize) {
+                    instructionDiv.style.fontSize = (BASE_INSTRUCTION_FONT * scale) + 'px';
+                }
+            } else {
+                // Reset to original values on desktop
+                info.style.fontSize = INFO_BASE_FONT_SIZE + 'px';
+                info.style.padding = INFO_BASE_PADDING + 'px';
+                info.style.maxWidth = INFO_BASE_MAX_WIDTH + 'px';
+                info.style.borderRadius = INFO_BASE_BORDER_RADIUS + 'px';
+                info.style.marginBottom = BASE_SPACING + 'px';
+                
+                // Reset spacing in child divs
+                const childDivs = info.querySelectorAll('div > div');
+                childDivs.forEach(div => {
+                    if (div.style.marginTop && div.style.marginTop.includes('px')) {
+                        div.style.marginTop = BASE_SPACING + 'px';
+                    }
+                    if (div.style.paddingTop && div.style.paddingTop.includes('px')) {
+                        div.style.paddingTop = BASE_SPACING + 'px';
+                    }
+                });
+                
+                const instructionDiv = info.querySelector('div:last-child');
+                if (instructionDiv && instructionDiv.style.fontSize) {
+                    instructionDiv.style.fontSize = BASE_INSTRUCTION_FONT + 'px';
+                }
             }
         }
         
@@ -542,6 +600,30 @@
             app.view.addEventListener('touchcancel', onTouchEnd, { passive: false });
         }
 
+        // Helper function to convert screen coordinates to game coordinates
+        function screenToGameCoords(screenX, screenY) {
+            const canvas = app.view;
+            const rect = canvas.getBoundingClientRect();
+            
+            // Get the actual canvas dimensions (game space)
+            const gameWidth = GRID_SIZE * CELL_SIZE;
+            const gameHeight = GRID_SIZE * CELL_SIZE;
+            
+            // Get the displayed canvas dimensions (CSS scaled)
+            const displayWidth = rect.width;
+            const displayHeight = rect.height;
+            
+            // Calculate scale factors
+            const scaleX = gameWidth / displayWidth;
+            const scaleY = gameHeight / displayHeight;
+            
+            // Convert screen coordinates to game coordinates
+            const gameX = (screenX - rect.left) * scaleX;
+            const gameY = (screenY - rect.top) * scaleY;
+            
+            return { x: gameX, y: gameY };
+        }
+
         function getCellFromPosition(x, y) {
             const col = Math.floor(x / CELL_SIZE);
             const row = Math.floor(y / CELL_SIZE);
@@ -554,11 +636,9 @@
         function onMouseDown(event) {
             if (gameState.gameOver) return; // Don't allow input when game is over
             
-            const rect = app.view.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
+            const coords = screenToGameCoords(event.clientX, event.clientY);
             
-            const cell = getCellFromPosition(x, y);
+            const cell = getCellFromPosition(coords.x, coords.y);
             if (cell && cell.owner === 'player' && cell.units.length > 0) {
                 gameState.selectedCell = cell;
                 gameState.isDragging = true;
@@ -571,26 +651,22 @@
 
         function onMouseMove(event) {
             if (gameState.isDragging && gameState.selectedCell) {
-                const rect = app.view.getBoundingClientRect();
-                const x = event.clientX - rect.left;
-                const y = event.clientY - rect.top;
+                const coords = screenToGameCoords(event.clientX, event.clientY);
                 
                 // Draw line from selected cell to mouse
                 const start = gameState.selectedCell.getCenterWorld();
                 gameState.dragLine.clear();
                 gameState.dragLine.lineStyle(3, 0xFFFFFF, 0.5);
                 gameState.dragLine.moveTo(start.x, start.y);
-                gameState.dragLine.lineTo(x, y);
+                gameState.dragLine.lineTo(coords.x, coords.y);
             }
         }
 
         function onMouseUp(event) {
             if (gameState.isDragging && gameState.selectedCell) {
-                const rect = app.view.getBoundingClientRect();
-                const x = event.clientX - rect.left;
-                const y = event.clientY - rect.top;
+                const coords = screenToGameCoords(event.clientX, event.clientY);
                 
-                const targetCell = getCellFromPosition(x, y);
+                const targetCell = getCellFromPosition(coords.x, coords.y);
                 if (targetCell && targetCell !== gameState.selectedCell) {
                     // Send units
                     const unitsToSend = gameState.selectedCell.units.filter(u => u.owner === 'player');
@@ -616,11 +692,9 @@
             if (gameState.gameOver) return; // Don't allow input when game is over
             
             const touch = event.touches[0];
-            const rect = app.view.getBoundingClientRect();
-            const x = touch.clientX - rect.left;
-            const y = touch.clientY - rect.top;
+            const coords = screenToGameCoords(touch.clientX, touch.clientY);
             
-            const cell = getCellFromPosition(x, y);
+            const cell = getCellFromPosition(coords.x, coords.y);
             if (cell && cell.owner === 'player' && cell.units.length > 0) {
                 gameState.selectedCell = cell;
                 gameState.isDragging = true;
@@ -635,16 +709,14 @@
             event.preventDefault(); // Prevent scrolling
             if (gameState.isDragging && gameState.selectedCell) {
                 const touch = event.touches[0];
-                const rect = app.view.getBoundingClientRect();
-                const x = touch.clientX - rect.left;
-                const y = touch.clientY - rect.top;
+                const coords = screenToGameCoords(touch.clientX, touch.clientY);
                 
                 // Draw line from selected cell to touch point
                 const start = gameState.selectedCell.getCenterWorld();
                 gameState.dragLine.clear();
                 gameState.dragLine.lineStyle(3, 0xFFFFFF, 0.5);
                 gameState.dragLine.moveTo(start.x, start.y);
-                gameState.dragLine.lineTo(x, y);
+                gameState.dragLine.lineTo(coords.x, coords.y);
             }
         }
 
@@ -652,11 +724,9 @@
             event.preventDefault(); // Prevent any default behavior
             if (gameState.isDragging && gameState.selectedCell) {
                 const touch = event.changedTouches[0] || event.touches[0];
-                const rect = app.view.getBoundingClientRect();
-                const x = touch.clientX - rect.left;
-                const y = touch.clientY - rect.top;
+                const coords = screenToGameCoords(touch.clientX, touch.clientY);
                 
-                const targetCell = getCellFromPosition(x, y);
+                const targetCell = getCellFromPosition(coords.x, coords.y);
                 if (targetCell && targetCell !== gameState.selectedCell) {
                     // Send units
                     const unitsToSend = gameState.selectedCell.units.filter(u => u.owner === 'player');
