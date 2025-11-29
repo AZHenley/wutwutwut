@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grid Strategy Game</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #1a1a2e;
+            font-family: Arial, sans-serif;
+        }
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #info {
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        canvas {
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="info">
+            <div>Player Units: <span id="playerUnits">5</span></div>
+            <div>Enemy Units: <span id="enemyUnits">5</span></div>
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.3);">
+                <div>Blue Tiles: <span id="blueTiles">1</span></div>
+                <div>Red Tiles: <span id="redTiles">1</span></div>
+            </div>
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.3);">
+                <div>Total Units Produced (Player): <span id="playerTotalProduced">0</span></div>
+                <div>Total Units Produced (Enemy): <span id="enemyTotalProduced">0</span></div>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px;">
+                Click and drag from your cells to send units!
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game configuration
+        const GRID_SIZE = 5;
+        const CELL_SIZE = 100;
+        const UNIT_RADIUS = 4;
+        const UNIT_SPEED = 1.15;
+        const UNIT_WANDER_SPEED = 0.35;
+        const UNIT_WANDER_RADIUS = 40;
+        const BASE_SPAWN_RATE = 270; // Frames between spawns 
+        const SPAWN_RATE_PER_CELL = 9; // Faster spawn per owned cell
+        const CAPTURE_RATE = 0.15; // How fast cells are captured/neutralized (higher = faster)
+
+        // Colors
+        const COLORS = {
+            NEUTRAL: 0xFFFFFF,
+            PLAYER: 0x4A90E2,
+            ENEMY: 0xE74C3C,
+            GRID: 0x2C3E50,
+            UNIT_PLAYER: 0x2E5C8A,
+            UNIT_ENEMY: 0xA93226
+        };
+
+        // Initialize PixiJS application
+        const app = new PIXI.Application({
+            width: GRID_SIZE * CELL_SIZE,
+            height: GRID_SIZE * CELL_SIZE,
+            backgroundColor: 0x16213e,
+            antialias: true
+        });
+        document.getElementById('gameContainer').appendChild(app.view);
+
+        // Game state
+        const gameState = {
+            cells: [],
+            units: [],
+            selectedCell: null,
+            dragLine: null,
+            isDragging: false,
+            playerSpawnTimer: 0,
+            enemySpawnTimer: 0,
+            playerTotalUnitsProduced: 0,
+            enemyTotalUnitsProduced: 0
+        };
+
+        // Cell class
+        class Cell {
+            constructor(row, col) {
+                this.row = row;
+                this.col = col;
+                this.owner = 'neutral'; // 'neutral', 'player', 'enemy'
+                this.units = [];
+                this.captureProgress = 0; // 0 to 100, progress towards capturing
+                this.capturingOwner = null; // Who is trying to capture this cell
+                
+                // Create cell graphics
+                this.container = new PIXI.Container();
+                this.container.x = col * CELL_SIZE;
+                this.container.y = row * CELL_SIZE;
+                
+                // Background
+                this.bg = new PIXI.Graphics();
+                this.updateColor();
+                this.container.addChild(this.bg);
+                
+                // Border
+                this.border = new PIXI.Graphics();
+                this.border.lineStyle(2, COLORS.GRID, 1);
+                this.border.drawRect(0, 0, CELL_SIZE, CELL_SIZE);
+                this.container.addChild(this.border);
+                
+                // Capture progress bar
+                this.progressBar = new PIXI.Graphics();
+                this.container.addChild(this.progressBar);
+                
+                // Unit count text
+                this.unitText = new PIXI.Text('', {
+                    fontFamily: 'Arial',
+                    fontSize: 20,
+                    fill: 0x000000,
+                    fontWeight: 'bold'
+                });
+                this.unitText.anchor.set(0.5);
+                this.unitText.x = CELL_SIZE / 2;
+                this.unitText.y = CELL_SIZE / 2;
+                this.container.addChild(this.unitText);
+                
+                // Make interactive
+                this.container.interactive = true;
+                this.container.buttonMode = true;
+                
+                app.stage.addChild(this.container);
+            }
+            
+            updateColor() {
+                this.bg.clear();
+                let color = COLORS.NEUTRAL;
+                if (this.owner === 'player') color = COLORS.PLAYER;
+                else if (this.owner === 'enemy') color = COLORS.ENEMY;
+                
+                this.bg.beginFill(color, 0.6);
+                this.bg.drawRect(0, 0, CELL_SIZE, CELL_SIZE);
+                this.bg.endFill();
+            }
+            
+            updateCaptureProgress() {
+                const playerUnits = this.units.filter(u => u.owner === 'player').length;
+                const enemyUnits = this.units.filter(u => u.owner === 'enemy').length;
+                
+                // Determine who has more units
+                let dominantOwner = null;
+                let unitAdvantage = 0;
+                
+                if (playerUnits > enemyUnits) {
+                    dominantOwner = 'player';
+                    unitAdvantage = playerUnits - enemyUnits;
+                } else if (enemyUnits > playerUnits) {
+                    dominantOwner = 'enemy';
+                    unitAdvantage = enemyUnits - playerUnits;
+                }
+                
+                // If cell is already owned by dominant owner, maintain ownership
+                if (dominantOwner === this.owner) {
+                    this.captureProgress = 100;
+                    this.capturingOwner = null;
+                }
+                // If cell is owned but has no units, keep the ownership (don't turn neutral)
+                else if (this.owner !== 'neutral' && playerUnits === 0 && enemyUnits === 0) {
+                    // Keep current ownership when cell is empty
+                    this.captureProgress = 100;
+                    this.capturingOwner = null;
+                }
+                // If cell is neutral and empty, stay neutral
+                else if (this.owner === 'neutral' && playerUnits === 0 && enemyUnits === 0) {
+                    this.captureProgress = 0;
+                    this.capturingOwner = null;
+                }
+                // If someone else is dominant, start/continue capture
+                else if (dominantOwner && dominantOwner !== this.owner) {
+                    // If this is a new capturer or continuing neutralization, set capturing owner
+                    if (this.capturingOwner !== dominantOwner) {
+                        this.capturingOwner = dominantOwner;
+                    }
+                    
+                    // If cell is owned by opponent, first neutralize it
+                    if (this.owner !== 'neutral') {
+                        // Decrease progress (neutralizing the cell)
+                        this.captureProgress -= unitAdvantage * CAPTURE_RATE;
+                        
+                        if (this.captureProgress <= 0) {
+                            this.owner = 'neutral';
+                            this.captureProgress = 0;
+                            this.updateColor();
+                        }
+                    } else {
+                        // Cell is neutral, now capture it
+                        this.captureProgress += unitAdvantage * CAPTURE_RATE;
+                        
+                        if (this.captureProgress >= 100) {
+                            this.captureProgress = 100;
+                            this.owner = dominantOwner;
+                            this.capturingOwner = null;
+                            this.updateColor();
+                        }
+                    }
+                }
+                // Equal units or no dominant owner, but cell is owned - keep ownership
+                else if (this.owner !== 'neutral') {
+                    this.captureProgress = 100;
+                    this.capturingOwner = null;
+                }
+                // Neutral cell with equal or no units
+                else {
+                    // Slowly decay capture progress
+                    if (this.captureProgress > 0) {
+                        this.captureProgress -= 0.2;
+                        if (this.captureProgress < 0) this.captureProgress = 0;
+                    }
+                    if (this.captureProgress === 0) {
+                        this.capturingOwner = null;
+                    }
+                }
+                
+                // Draw progress bar
+                this.progressBar.clear();
+                
+                // Show progress bar during neutralization (owned -> neutral)
+                if (this.owner !== 'neutral' && this.capturingOwner && this.capturingOwner !== this.owner) {
+                    const barWidth = (CELL_SIZE - 10) * (this.captureProgress / 100);
+                    let barColor = this.owner === 'player' ? COLORS.PLAYER : COLORS.ENEMY;
+                    
+                    // Background
+                    this.progressBar.beginFill(0x000000, 0.3);
+                    this.progressBar.drawRect(5, CELL_SIZE - 15, CELL_SIZE - 10, 10);
+                    this.progressBar.endFill();
+                    
+                    // Progress (shows how much ownership remains)
+                    this.progressBar.beginFill(barColor, 0.8);
+                    this.progressBar.drawRect(5, CELL_SIZE - 15, barWidth, 10);
+                    this.progressBar.endFill();
+                }
+                // Show progress bar during capture (neutral -> owned)
+                else if (this.captureProgress > 0 && this.captureProgress < 100 && this.owner === 'neutral' && this.capturingOwner) {
+                    const barWidth = (CELL_SIZE - 10) * (this.captureProgress / 100);
+                    let barColor = this.capturingOwner === 'player' ? COLORS.PLAYER : COLORS.ENEMY;
+                    
+                    // Background
+                    this.progressBar.beginFill(0x000000, 0.3);
+                    this.progressBar.drawRect(5, CELL_SIZE - 15, CELL_SIZE - 10, 10);
+                    this.progressBar.endFill();
+                    
+                    // Progress
+                    this.progressBar.beginFill(barColor, 0.8);
+                    this.progressBar.drawRect(5, CELL_SIZE - 15, barWidth, 10);
+                    this.progressBar.endFill();
+                }
+            }
+            
+            updateUnitCount() {
+                const count = this.units.length;
+                this.unitText.text = count > 0 ? count.toString() : '';
+            }
+            
+            getCenterWorld() {
+                return {
+                    x: this.col * CELL_SIZE + CELL_SIZE / 2,
+                    y: this.row * CELL_SIZE + CELL_SIZE / 2
+                };
+            }
+        }
+
+        // Unit class
+        class Unit {
+            constructor(owner, cell) {
+                this.owner = owner; // 'player' or 'enemy'
+                this.cell = cell;
+                this.isMoving = false;
+                this.targetCell = null;
+                
+                // Graphics
+                this.graphics = new PIXI.Graphics();
+                this.graphics.lineStyle(1, 0xFFFFFF, 1); // White outline
+                this.graphics.beginFill(owner === 'player' ? COLORS.UNIT_PLAYER : COLORS.UNIT_ENEMY);
+                this.graphics.drawCircle(0, 0, UNIT_RADIUS);
+                this.graphics.endFill();
+                
+                // Position in cell
+                const center = cell.getCenterWorld();
+                this.x = center.x;
+                this.y = center.y;
+                
+                // Wandering behavior - velocity-based steering
+                this.velocityAngle = Math.random() * Math.PI * 2;
+                this.vx = Math.cos(this.velocityAngle) * UNIT_WANDER_SPEED;
+                this.vy = Math.sin(this.velocityAngle) * UNIT_WANDER_SPEED;
+                
+                this.updatePosition();
+                app.stage.addChild(this.graphics);
+                
+                // Add to cell
+                cell.units.push(this);
+            }
+            
+            updatePosition() {
+                this.graphics.x = this.x;
+                this.graphics.y = this.y;
+            }
+            
+            wander() {
+                if (this.isMoving) return;
+                
+                const center = this.cell.getCenterWorld();
+                // Allow movement in most of the cell, leaving small margin for boundaries
+                const cellMinX = this.cell.col * CELL_SIZE + UNIT_RADIUS + 5;
+                const cellMaxX = (this.cell.col + 1) * CELL_SIZE - UNIT_RADIUS - 5;
+                const cellMinY = this.cell.row * CELL_SIZE + UNIT_RADIUS + 5;
+                const cellMaxY = (this.cell.row + 1) * CELL_SIZE - UNIT_RADIUS - 5;
+                
+                // Calculate distance from center
+                const distFromCenterX = this.x - center.x;
+                const distFromCenterY = this.y - center.y;
+                const distFromCenter = Math.sqrt(distFromCenterX * distFromCenterX + distFromCenterY * distFromCenterY);
+                
+                // Steering behavior: gradually change direction (random wander)
+                this.velocityAngle += (Math.random() - 0.5) * 0.08;
+                
+                // Steer away from boundaries smoothly (only when very close)
+                const margin = 8;
+                let steerX = 0;
+                let steerY = 0;
+                
+                if (this.x < cellMinX + margin) {
+                    steerX = 1; // Steer right
+                } else if (this.x > cellMaxX - margin) {
+                    steerX = -1; // Steer left
+                }
+                
+                if (this.y < cellMinY + margin) {
+                    steerY = 1; // Steer down
+                } else if (this.y > cellMaxY - margin) {
+                    steerY = -1; // Steer up
+                }
+                
+                // Apply boundary steering (gentler)
+                if (steerX !== 0 || steerY !== 0) {
+                    const desiredAngle = Math.atan2(steerY, steerX);
+                    this.velocityAngle = this.velocityAngle * 0.9 + desiredAngle * 0.1;
+                }
+                
+                // Only gently steer back towards center if very far (much less aggressive)
+                if (distFromCenter > UNIT_WANDER_RADIUS * 1.2) {
+                    const angleToCenter = Math.atan2(-distFromCenterY, -distFromCenterX);
+                    this.velocityAngle = this.velocityAngle * 0.95 + angleToCenter * 0.05;
+                }
+                
+                // Update velocity based on angle
+                this.vx = Math.cos(this.velocityAngle) * UNIT_WANDER_SPEED;
+                this.vy = Math.sin(this.velocityAngle) * UNIT_WANDER_SPEED;
+                
+                // Move based on velocity
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                // Clamp position to cell bounds
+                this.x = Math.max(cellMinX, Math.min(cellMaxX, this.x));
+                this.y = Math.max(cellMinY, Math.min(cellMaxY, this.y));
+                
+                this.updatePosition();
+            }
+            
+            moveTo(targetCell) {
+                this.isMoving = true;
+                this.targetCell = targetCell;
+                
+                // Remove from current cell
+                const index = this.cell.units.indexOf(this);
+                if (index > -1) {
+                    this.cell.units.splice(index, 1);
+                }
+                this.cell = null;
+            }
+            
+            update() {
+                if (this.isMoving && this.targetCell) {
+                    const target = this.targetCell.getCenterWorld();
+                    const dx = target.x - this.x;
+                    const dy = target.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < UNIT_SPEED) {
+                        // Arrived at destination
+                        this.x = target.x;
+                        this.y = target.y;
+                        this.isMoving = false;
+                        this.cell = this.targetCell;
+                        this.targetCell.units.push(this);
+                        this.targetCell = null;
+                        
+                        // Reset wander - initialize velocity-based steering
+                        this.velocityAngle = Math.random() * Math.PI * 2;
+                        this.vx = Math.cos(this.velocityAngle) * UNIT_WANDER_SPEED;
+                        this.vy = Math.sin(this.velocityAngle) * UNIT_WANDER_SPEED;
+                    } else {
+                        // Move towards target
+                        this.x += (dx / dist) * UNIT_SPEED;
+                        this.y += (dy / dist) * UNIT_SPEED;
+                    }
+                    this.updatePosition();
+                } else {
+                    this.wander();
+                }
+            }
+            
+            destroy() {
+                app.stage.removeChild(this.graphics);
+                this.graphics.destroy();
+            }
+        }
+
+        // Initialize grid
+        function initGrid() {
+            for (let row = 0; row < GRID_SIZE; row++) {
+                gameState.cells[row] = [];
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    gameState.cells[row][col] = new Cell(row, col);
+                }
+            }
+        }
+
+        // Initialize units
+        function initUnits() {
+            // Player units in bottom right (4, 4)
+            const playerCell = gameState.cells[4][4];
+            for (let i = 0; i < 5; i++) {
+                const unit = new Unit('player', playerCell);
+                gameState.units.push(unit);
+                gameState.playerTotalUnitsProduced++;
+            }
+            playerCell.owner = 'player';
+            playerCell.updateColor();
+            
+            // Enemy units in top left (0, 0)
+            const enemyCell = gameState.cells[0][0];
+            for (let i = 0; i < 5; i++) {
+                const unit = new Unit('enemy', enemyCell);
+                gameState.units.push(unit);
+                gameState.enemyTotalUnitsProduced++;
+            }
+            enemyCell.owner = 'enemy';
+            enemyCell.updateColor();
+        }
+
+        // Input handling
+        function setupInput() {
+            // Mouse events
+            app.view.addEventListener('mousedown', onMouseDown);
+            app.view.addEventListener('mousemove', onMouseMove);
+            app.view.addEventListener('mouseup', onMouseUp);
+            
+            // Touch events
+            app.view.addEventListener('touchstart', onTouchStart, { passive: false });
+            app.view.addEventListener('touchmove', onTouchMove, { passive: false });
+            app.view.addEventListener('touchend', onTouchEnd, { passive: false });
+            app.view.addEventListener('touchcancel', onTouchEnd, { passive: false });
+        }
+
+        function getCellFromPosition(x, y) {
+            const col = Math.floor(x / CELL_SIZE);
+            const row = Math.floor(y / CELL_SIZE);
+            if (row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE) {
+                return gameState.cells[row][col];
+            }
+            return null;
+        }
+
+        function onMouseDown(event) {
+            const rect = app.view.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            const cell = getCellFromPosition(x, y);
+            if (cell && cell.owner === 'player' && cell.units.length > 0) {
+                gameState.selectedCell = cell;
+                gameState.isDragging = true;
+                
+                // Create drag line
+                gameState.dragLine = new PIXI.Graphics();
+                app.stage.addChild(gameState.dragLine);
+            }
+        }
+
+        function onMouseMove(event) {
+            if (gameState.isDragging && gameState.selectedCell) {
+                const rect = app.view.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                // Draw line from selected cell to mouse
+                const start = gameState.selectedCell.getCenterWorld();
+                gameState.dragLine.clear();
+                gameState.dragLine.lineStyle(3, 0xFFFFFF, 0.5);
+                gameState.dragLine.moveTo(start.x, start.y);
+                gameState.dragLine.lineTo(x, y);
+            }
+        }
+
+        function onMouseUp(event) {
+            if (gameState.isDragging && gameState.selectedCell) {
+                const rect = app.view.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                const targetCell = getCellFromPosition(x, y);
+                if (targetCell && targetCell !== gameState.selectedCell) {
+                    // Send units
+                    const unitsToSend = gameState.selectedCell.units.filter(u => u.owner === 'player');
+                    unitsToSend.forEach(unit => {
+                        unit.moveTo(targetCell);
+                    });
+                }
+                
+                // Clean up
+                if (gameState.dragLine) {
+                    app.stage.removeChild(gameState.dragLine);
+                    gameState.dragLine.destroy();
+                    gameState.dragLine = null;
+                }
+                gameState.selectedCell = null;
+                gameState.isDragging = false;
+            }
+        }
+
+        // Touch event handlers
+        function onTouchStart(event) {
+            event.preventDefault(); // Prevent scrolling and zooming
+            const touch = event.touches[0];
+            const rect = app.view.getBoundingClientRect();
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            
+            const cell = getCellFromPosition(x, y);
+            if (cell && cell.owner === 'player' && cell.units.length > 0) {
+                gameState.selectedCell = cell;
+                gameState.isDragging = true;
+                
+                // Create drag line
+                gameState.dragLine = new PIXI.Graphics();
+                app.stage.addChild(gameState.dragLine);
+            }
+        }
+
+        function onTouchMove(event) {
+            event.preventDefault(); // Prevent scrolling
+            if (gameState.isDragging && gameState.selectedCell) {
+                const touch = event.touches[0];
+                const rect = app.view.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                
+                // Draw line from selected cell to touch point
+                const start = gameState.selectedCell.getCenterWorld();
+                gameState.dragLine.clear();
+                gameState.dragLine.lineStyle(3, 0xFFFFFF, 0.5);
+                gameState.dragLine.moveTo(start.x, start.y);
+                gameState.dragLine.lineTo(x, y);
+            }
+        }
+
+        function onTouchEnd(event) {
+            event.preventDefault(); // Prevent any default behavior
+            if (gameState.isDragging && gameState.selectedCell) {
+                const touch = event.changedTouches[0] || event.touches[0];
+                const rect = app.view.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                
+                const targetCell = getCellFromPosition(x, y);
+                if (targetCell && targetCell !== gameState.selectedCell) {
+                    // Send units
+                    const unitsToSend = gameState.selectedCell.units.filter(u => u.owner === 'player');
+                    unitsToSend.forEach(unit => {
+                        unit.moveTo(targetCell);
+                    });
+                }
+                
+                // Clean up
+                if (gameState.dragLine) {
+                    app.stage.removeChild(gameState.dragLine);
+                    gameState.dragLine.destroy();
+                    gameState.dragLine = null;
+                }
+                gameState.selectedCell = null;
+                gameState.isDragging = false;
+            }
+        }
+
+        // Update UI
+        function updateUI() {
+            const playerUnits = gameState.units.filter(u => u.owner === 'player').length;
+            const enemyUnits = gameState.units.filter(u => u.owner === 'enemy').length;
+            
+            document.getElementById('playerUnits').textContent = playerUnits;
+            document.getElementById('enemyUnits').textContent = enemyUnits;
+            
+            // Update score (tiles owned)
+            const blueTiles = countOwnedCells('player');
+            const redTiles = countOwnedCells('enemy');
+            document.getElementById('blueTiles').textContent = blueTiles;
+            document.getElementById('redTiles').textContent = redTiles;
+            
+            // Update total units produced
+            document.getElementById('playerTotalProduced').textContent = gameState.playerTotalUnitsProduced;
+            document.getElementById('enemyTotalProduced').textContent = gameState.enemyTotalUnitsProduced;
+        }
+
+        // Simple AI for enemy
+        function updateAI() {
+            // Every 3 seconds, move units from a random enemy cell to an adjacent cell
+            if (Math.random() < 0.01) {
+                const enemyCells = [];
+                for (let row = 0; row < GRID_SIZE; row++) {
+                    for (let col = 0; col < GRID_SIZE; col++) {
+                        const cell = gameState.cells[row][col];
+                        if (cell.owner === 'enemy' && cell.units.length > 0) {
+                            enemyCells.push(cell);
+                        }
+                    }
+                }
+                
+                if (enemyCells.length > 0) {
+                    const fromCell = enemyCells[Math.floor(Math.random() * enemyCells.length)];
+                    const adjacentCells = [];
+                    
+                    // Get adjacent cells
+                    const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+                    directions.forEach(([dr, dc]) => {
+                        const newRow = fromCell.row + dr;
+                        const newCol = fromCell.col + dc;
+                        if (newRow >= 0 && newRow < GRID_SIZE && newCol >= 0 && newCol < GRID_SIZE) {
+                            adjacentCells.push(gameState.cells[newRow][newCol]);
+                        }
+                    });
+                    
+                    if (adjacentCells.length > 0) {
+                        const toCell = adjacentCells[Math.floor(Math.random() * adjacentCells.length)];
+                        const unitsToSend = fromCell.units.filter(u => u.owner === 'enemy');
+                        unitsToSend.forEach(unit => {
+                            unit.moveTo(toCell);
+                        });
+                    }
+                }
+            }
+        }
+
+        // Count owned cells
+        function countOwnedCells(owner) {
+            let count = 0;
+            for (let row = 0; row < GRID_SIZE; row++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    if (gameState.cells[row][col].owner === owner) {
+                        count++;
+                    }
+                }
+            }
+            return count;
+        }
+
+        // Spawn units
+        function spawnUnits() {
+            // Player spawning in bottom right (4, 4)
+            gameState.playerSpawnTimer++;
+            const playerCells = countOwnedCells('player');
+            const playerSpawnRate = Math.max(30, BASE_SPAWN_RATE - (playerCells * SPAWN_RATE_PER_CELL));
+            
+            if (gameState.playerSpawnTimer >= playerSpawnRate) {
+                gameState.playerSpawnTimer = 0;
+                const spawnCell = gameState.cells[4][4];
+                if (spawnCell.owner === 'player') {
+                    const unit = new Unit('player', spawnCell);
+                    gameState.units.push(unit);
+                    gameState.playerTotalUnitsProduced++;
+                }
+            }
+            
+            // Enemy spawning in top left (0, 0)
+            gameState.enemySpawnTimer++;
+            const enemyCells = countOwnedCells('enemy');
+            const enemySpawnRate = Math.max(30, BASE_SPAWN_RATE - (enemyCells * SPAWN_RATE_PER_CELL));
+            
+            if (gameState.enemySpawnTimer >= enemySpawnRate) {
+                gameState.enemySpawnTimer = 0;
+                const spawnCell = gameState.cells[0][0];
+                if (spawnCell.owner === 'enemy') {
+                    const unit = new Unit('enemy', spawnCell);
+                    gameState.units.push(unit);
+                    gameState.enemyTotalUnitsProduced++;
+                }
+            }
+        }
+
+        // Game loop
+        app.ticker.add(() => {
+            // Update all units
+            gameState.units.forEach(unit => {
+                unit.update();
+            });
+            
+            // Handle unit conflicts and capture progress
+            for (let row = 0; row < GRID_SIZE; row++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    const cell = gameState.cells[row][col];
+                    const playerUnits = cell.units.filter(u => u.owner === 'player');
+                    const enemyUnits = cell.units.filter(u => u.owner === 'enemy');
+                    
+                    // Combat: units destroy each other
+                    if (playerUnits.length > 0 && enemyUnits.length > 0) {
+                        const minCount = Math.min(playerUnits.length, enemyUnits.length);
+                        
+                        for (let i = 0; i < minCount; i++) {
+                            // Remove units
+                            const pUnit = playerUnits[i];
+                            const eUnit = enemyUnits[i];
+                            
+                            pUnit.destroy();
+                            eUnit.destroy();
+                            
+                            gameState.units = gameState.units.filter(u => u !== pUnit && u !== eUnit);
+                            cell.units = cell.units.filter(u => u !== pUnit && u !== eUnit);
+                        }
+                    }
+                    
+                    // Update capture progress and unit count
+                    cell.updateCaptureProgress();
+                    cell.updateUnitCount();
+                }
+            }
+            
+            // Spawn units based on owned cells
+            spawnUnits();
+            
+            updateAI();
+            updateUI();
+        });
+
+        // Initialize game
+        initGrid();
+        initUnits();
+        setupInput();
+        updateUI();
+    </script>
+</body>
+</html>
