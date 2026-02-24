@@ -31,7 +31,8 @@
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    overflow: hidden;
+    overflow-x: hidden;
+    padding: 12px;
   }
 
   h1 {
@@ -51,7 +52,7 @@
   .hud-item .label { color: var(--text-dim); font-size: 11px; }
   .hud-item .value { font-weight: 600; font-size: 16px; }
 
-  .timer-bar-container { width: 500px; height: 6px; background: #1a1a2e; border-radius: 3px; margin-bottom: 12px; overflow: hidden; }
+  .timer-bar-container { width: 100%; max-width: 500px; height: 6px; background: #1a1a2e; border-radius: 3px; margin-bottom: 12px; overflow: hidden; }
   .timer-bar { height: 100%; border-radius: 3px; transition: width 0.1s linear; }
 
   .player-indicators { display: flex; gap: 10px; margin-bottom: 14px; }
@@ -72,6 +73,7 @@
   .controls-hint {
     margin-top: 14px; font-size: 11px; color: var(--text-dim);
     display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; max-width: 600px;
+    padding: 0 12px;
   }
   .controls-hint kbd {
     background: #1e1e2e; padding: 2px 7px; border-radius: 3px;
@@ -81,6 +83,7 @@
   #start-overlay, #end-overlay {
     position: fixed; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(8px);
+    padding: 20px;
   }
   #start-overlay { background: rgba(0,0,0,0.85); }
   #end-overlay { background: rgba(0,0,0,0.88); display: none; }
@@ -92,7 +95,7 @@
   }
   #start-overlay .instructions {
     max-width: 460px; text-align: center; font-size: 13px; line-height: 1.7;
-    color: var(--text-dim); margin-bottom: 30px;
+    color: var(--text-dim); margin-bottom: 30px; padding: 0 8px;
   }
   #start-overlay .instructions strong { color: var(--text); }
 
@@ -129,6 +132,29 @@
     white-space: nowrap; animation: readyPulse 1.5s ease-in-out infinite;
   }
   @keyframes readyPulse { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+
+  @media (max-width: 540px) {
+    h1 { font-size: 20px; }
+    .subtitle { font-size: 9px; margin-bottom: 10px; }
+    .hud { gap: 14px; margin-bottom: 8px; }
+    .hud-item { font-size: 11px; }
+    .hud-item .value { font-size: 14px; }
+    .timer-bar-container { margin-bottom: 8px; }
+    .player-indicators { gap: 6px; margin-bottom: 10px; }
+    .player-ind { padding: 3px 7px; font-size: 9px; }
+    .carrying-indicator { font-size: 10px; margin-bottom: 2px; }
+    .controls-hint { font-size: 9px; gap: 10px; margin-top: 10px; }
+    .controls-hint kbd { font-size: 8px; padding: 1px 5px; }
+    .ready-banner { font-size: 12px; padding: 8px 18px; }
+    #start-overlay h2 { font-size: 24px; }
+    #start-overlay .instructions { font-size: 11px; line-height: 1.6; }
+    .btn { font-size: 14px; padding: 10px 28px; }
+    #end-overlay h2 { font-size: 22px; }
+    #final-score { font-size: 36px; }
+    #perfect-msg { font-size: 12px; }
+    .score-breakdown { gap: 12px; }
+    .score-breakdown .sb { font-size: 12px; }
+  }
 </style>
 </head>
 <body>
@@ -157,7 +183,7 @@
 
 <div id="grid-wrapper">
   <div class="ready-banner" id="ready-banner" style="display:none;">MOVE TO START</div>
-  <canvas id="game" width="500" height="500"></canvas>
+  <canvas id="game"></canvas>
 </div>
 
 <div class="controls-hint">
@@ -187,7 +213,6 @@
 
 <script>
 const GRID = 10;
-const CELL = 50;
 const ROUND_TIME = 10;
 const NUM_PLAYERS = 4;
 const NUM_ITEMS = 8;
@@ -199,6 +224,26 @@ const CHEST_REWARD = 5;
 const MOVE_COOLDOWN = 120;
 
 const MAX_SCORE = NUM_ITEMS + NUM_BEACONS * BEACON_REWARD + CHEST_REWARD;
+
+let CELL = 50;
+let CANVAS_SIZE = CELL * GRID;
+
+function resizeCanvas() {
+  const maxW = Math.min(window.innerWidth - 24, 500);
+  const maxH = window.innerHeight - 280;
+  const size = Math.max(200, Math.min(maxW, maxH));
+  CELL = Math.floor(size / GRID);
+  CANVAS_SIZE = CELL * GRID;
+  canvas.width = CANVAS_SIZE;
+  canvas.height = CANVAS_SIZE;
+  canvas.style.width = CANVAS_SIZE + 'px';
+  canvas.style.height = CANVAS_SIZE + 'px';
+  document.querySelector('.timer-bar-container').style.maxWidth = CANVAS_SIZE + 'px';
+  if (gameState) render();
+}
+
+// Scale factor relative to default 50px cell
+function S(px) { return px * CELL / 50; }
 
 const COLORS = ['#ff4d6a','#4daaff','#4dff91','#ffcc4d'];
 const GHOST_COLORS = ['rgba(255,77,106,0.3)','rgba(77,170,255,0.3)','rgba(77,255,145,0.3)','rgba(255,204,77,0.3)'];
@@ -744,16 +789,16 @@ function endGame() {
 function render(timestamp) {
   const gs = gameState;
   const now = timestamp || performance.now();
-  ctx.clearRect(0, 0, 500, 500);
+  ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
   ctx.fillStyle = '#0e0e16';
-  ctx.fillRect(0, 0, 500, 500);
+  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
   // Grid
   ctx.strokeStyle = '#1a1a28'; ctx.lineWidth = 1;
   for (let i = 0; i <= GRID; i++) {
-    ctx.beginPath(); ctx.moveTo(i*CELL, 0); ctx.lineTo(i*CELL, 500); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, i*CELL); ctx.lineTo(500, i*CELL); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(i*CELL, 0); ctx.lineTo(i*CELL, CANVAS_SIZE); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i*CELL); ctx.lineTo(CANVAS_SIZE, i*CELL); ctx.stroke();
   }
 
   // Corners
@@ -761,16 +806,16 @@ function render(timestamp) {
   for (const [cx, cy] of CORNERS) {
     ctx.fillRect(cx*CELL+1, cy*CELL+1, CELL-2, CELL-2);
     ctx.strokeStyle = '#ffffff20'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(cx*CELL+CELL/2, cy*CELL+CELL/2, 12, 0, Math.PI*2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(cx*CELL+CELL/2, cy*CELL+CELL/2, 5, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx*CELL+CELL/2, cy*CELL+CELL/2, S(12), 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx*CELL+CELL/2, cy*CELL+CELL/2, S(5), 0, Math.PI*2); ctx.stroke();
   }
 
   // Gems
   for (const item of gs.items) {
     if (item.pickedUp) continue;
-    ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 12;
+    ctx.shadowColor = '#c084fc'; ctx.shadowBlur = S(12);
     ctx.fillStyle = '#c084fc';
-    ctx.font = '20px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `${S(20)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('◆', item.x*CELL+CELL/2, item.y*CELL+CELL/2);
     ctx.shadowBlur = 0;
   }
@@ -779,9 +824,9 @@ function render(timestamp) {
   for (const key of gs.keys) {
     if (key.pickedUp || key.delivered) continue;
     const kx = key.x*CELL+CELL/2, ky = key.y*CELL+CELL/2;
-    ctx.shadowColor = '#3dd9d6'; ctx.shadowBlur = 10;
+    ctx.shadowColor = '#3dd9d6'; ctx.shadowBlur = S(10);
     ctx.fillStyle = '#3dd9d6';
-    ctx.font = `bold 20px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `bold ${S(20)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('⚷', kx, ky);
     ctx.shadowBlur = 0;
   }
@@ -792,27 +837,24 @@ function render(timestamp) {
     if (gs.chest.unlocked) {
       ctx.globalAlpha = 0.25;
       ctx.fillStyle = '#e8b530';
-      ctx.font = `18px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `${S(18)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('📦', cx, cy);
       ctx.globalAlpha = 1;
     } else {
-      // Chest background
       ctx.fillStyle = `rgba(232,181,48,0.08)`;
       ctx.fillRect(gs.chest.x*CELL+2, gs.chest.y*CELL+2, CELL-4, CELL-4);
 
-      // Chest icon
-      ctx.shadowColor = '#e8b530'; ctx.shadowBlur = gs.chest.keysInserted > 0 ? 12 : 6;
+      ctx.shadowColor = '#e8b530'; ctx.shadowBlur = gs.chest.keysInserted > 0 ? S(12) : S(6);
       ctx.fillStyle = '#e8b530';
-      ctx.font = `18px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `${S(18)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('📦', cx, cy);
       ctx.shadowBlur = 0;
 
-      // Key slots
-      const slotY = cy + 18;
+      const slotY = cy + S(18);
       for (let k = 0; k < NUM_KEYS; k++) {
-        const slotX = cx + (k - (NUM_KEYS-1)/2) * 12;
+        const slotX = cx + (k - (NUM_KEYS-1)/2) * S(12);
         ctx.fillStyle = k < gs.chest.keysInserted ? '#3dd9d6' : '#333348';
-        ctx.beginPath(); ctx.arc(slotX, slotY, 3.5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(slotX, slotY, S(3.5), 0, Math.PI*2); ctx.fill();
       }
     }
   }
@@ -825,10 +867,10 @@ function render(timestamp) {
     if (b.completed) {
       ctx.globalAlpha = 0.15;
       ctx.strokeStyle = '#ff8c42'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(bx, by, 18, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx, by, S(18), 0, Math.PI*2); ctx.stroke();
       ctx.globalAlpha = 1;
       ctx.fillStyle = 'rgba(255,140,66,0.25)';
-      ctx.font = `bold 14px 'Silkscreen', cursive`;
+      ctx.font = `bold ${S(14)}px 'Silkscreen', cursive`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('OK', bx, by+1);
       continue;
@@ -854,11 +896,11 @@ function render(timestamp) {
         }
       }
 
-      ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = 8;
+      ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = S(8);
       for (const pos of positions) {
         if (isAdjacent(pos.x, pos.y, b.x, b.y)) {
           ctx.strokeStyle = `rgba(255,140,66,${0.2 + pulse*0.3})`;
-          ctx.lineWidth = 2; ctx.setLineDash([4, 4]);
+          ctx.lineWidth = 2; ctx.setLineDash([S(4), S(4)]);
           ctx.beginPath();
           ctx.moveTo(pos.x*CELL+CELL/2, pos.y*CELL+CELL/2);
           ctx.lineTo(bx, by); ctx.stroke(); ctx.setLineDash([]);
@@ -868,34 +910,34 @@ function render(timestamp) {
 
       ctx.strokeStyle = `rgba(255,140,66,${0.3 + pulse*0.4})`;
       ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(bx, by, 24, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(bx, by, S(24), 0, Math.PI*2); ctx.stroke();
     }
 
     const progress = 1 - b.count / b.maxCount;
     ctx.fillStyle = `rgba(255,140,66,${0.06 + progress*0.14})`;
-    ctx.beginPath(); ctx.arc(bx, by, 20, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx, by, S(20), 0, Math.PI*2); ctx.fill();
 
-    ctx.strokeStyle = '#ff8c42'; ctx.lineWidth = 3;
+    ctx.strokeStyle = '#ff8c42'; ctx.lineWidth = S(3);
     ctx.beginPath();
-    ctx.arc(bx, by, 20, -Math.PI/2, -Math.PI/2 + Math.PI*2*progress);
+    ctx.arc(bx, by, S(20), -Math.PI/2, -Math.PI/2 + Math.PI*2*progress);
     ctx.stroke();
 
     ctx.strokeStyle = 'rgba(255,140,66,0.3)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(bx, by, 20, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(bx, by, S(20), 0, Math.PI*2); ctx.stroke();
 
     ctx.fillStyle = adjCount > 0 ? '#ffb070' : '#ff8c42';
-    ctx.font = `bold 16px 'Silkscreen', cursive`;
+    ctx.font = `bold ${S(16)}px 'Silkscreen', cursive`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(b.count, bx, by+1);
 
     if (adjCount > 1) {
       ctx.fillStyle = 'rgba(255,200,100,0.8)';
-      ctx.font = `bold 10px 'Silkscreen', cursive`;
-      ctx.fillText('x'+adjCount, bx, by-26);
+      ctx.font = `bold ${S(10)}px 'Silkscreen', cursive`;
+      ctx.fillText('x'+adjCount, bx, by-S(26));
     } else if (adjCount === 1) {
       ctx.fillStyle = 'rgba(255,140,66,0.5)';
-      ctx.font = `10px 'Silkscreen', cursive`;
-      ctx.fillText('▼', bx, by-24);
+      ctx.font = `${S(10)}px 'Silkscreen', cursive`;
+      ctx.fillText('▼', bx, by-S(24));
     }
   }
 
@@ -910,13 +952,13 @@ function render(timestamp) {
 
     ctx.globalAlpha = alpha * 0.6;
     ctx.strokeStyle = pop.color; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(px, py, 20 + age*50, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(px, py, S(20) + age*S(50), 0, Math.PI*2); ctx.stroke();
 
     ctx.globalAlpha = alpha;
     ctx.fillStyle = pop.color;
-    ctx.font = `bold 16px 'Silkscreen', cursive`;
+    ctx.font = `bold ${S(16)}px 'Silkscreen', cursive`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(pop.text, px, py - 25 - age*40);
+    ctx.fillText(pop.text, px, py - S(25) - age*S(40));
     ctx.globalAlpha = 1;
   }
 
@@ -935,26 +977,27 @@ function render(timestamp) {
 
 function drawPlayer(x, y, fillColor, strokeColor, isGhost, carrying, num) {
   const px = x*CELL+CELL/2, py = y*CELL+CELL/2;
+  const r = isGhost ? S(14) : S(16);
 
-  if (!isGhost) { ctx.shadowColor = strokeColor; ctx.shadowBlur = 18; }
+  if (!isGhost) { ctx.shadowColor = strokeColor; ctx.shadowBlur = S(18); }
   ctx.fillStyle = fillColor;
-  ctx.beginPath(); ctx.arc(px, py, isGhost ? 14 : 16, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI*2); ctx.fill();
   ctx.shadowBlur = 0;
 
-  ctx.strokeStyle = strokeColor; ctx.lineWidth = isGhost ? 1 : 2.5;
-  ctx.beginPath(); ctx.arc(px, py, isGhost ? 14 : 16, 0, Math.PI*2); ctx.stroke();
+  ctx.strokeStyle = strokeColor; ctx.lineWidth = isGhost ? 1 : S(2.5);
+  ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI*2); ctx.stroke();
 
   ctx.fillStyle = isGhost ? strokeColor : '#0a0a0f';
-  ctx.font = `bold 13px 'Silkscreen', cursive`;
+  ctx.font = `bold ${S(13)}px 'Silkscreen', cursive`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(num, px, py+1);
 
   if (carrying === 'gem') {
-    ctx.fillStyle = '#c084fc'; ctx.font = '12px serif';
-    ctx.fillText('◆', px+14, py-14);
+    ctx.fillStyle = '#c084fc'; ctx.font = `${S(12)}px serif`;
+    ctx.fillText('◆', px+S(14), py-S(14));
   } else if (carrying === 'key') {
-    ctx.fillStyle = '#3dd9d6'; ctx.font = '12px serif';
-    ctx.fillText('⚷', px+14, py-14);
+    ctx.fillStyle = '#3dd9d6'; ctx.font = `${S(12)}px serif`;
+    ctx.fillText('⚷', px+S(14), py-S(14));
   }
 }
 
@@ -983,6 +1026,8 @@ canvas.addEventListener('touchend', e => {
 document.getElementById('start-btn').addEventListener('click', startGame);
 document.getElementById('restart-btn').addEventListener('click', startGame);
 
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 initGame();
 render();
 </script>
