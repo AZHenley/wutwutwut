@@ -105,6 +105,7 @@
     border-radius: 6px; cursor: pointer; transition: all 0.2s; letter-spacing: 1px;
   }
   .btn:hover { background: var(--p3); color: var(--bg); box-shadow: 0 0 20px rgba(77,255,145,0.4); }
+  #replay-btn:hover { background: var(--p2) !important; color: var(--bg) !important; box-shadow: 0 0 20px rgba(77,170,255,0.4) !important; }
 
   #end-overlay h2 { font-family: 'Silkscreen', cursive; font-size: 30px; margin-bottom: 10px; color: var(--p4); }
   #final-score {
@@ -126,10 +127,31 @@
 
   .ready-banner {
     position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    font-family: 'Silkscreen', cursive; font-size: 14px; padding: 10px 24px;
-    border-radius: 6px; background: rgba(0,0,0,0.82); border: 1.5px solid;
-    pointer-events: none; z-index: 10; text-align: center; line-height: 1.6;
-    white-space: nowrap; animation: readyPulse 1.5s ease-in-out infinite;
+    font-family: 'Silkscreen', cursive; font-size: 14px; padding: 14px 28px;
+    border-radius: 6px; background: rgba(0,0,0,0.88); border: 1.5px solid;
+    pointer-events: auto; z-index: 10; text-align: center; line-height: 1.8;
+    white-space: nowrap;
+  }
+
+  .ready-banner .ready-label {
+    font-size: 11px; opacity: 0.5; margin-bottom: 4px;
+  }
+
+  .ready-banner .ready-btn {
+    font-family: 'Silkscreen', cursive; font-size: 13px;
+    padding: 6px 20px; border: 1.5px solid; background: transparent;
+    border-radius: 4px; cursor: pointer; transition: all 0.2s;
+    display: inline-block; margin-top: 6px; letter-spacing: 1px;
+  }
+
+  .ready-banner .ready-btn:hover {
+    background: currentColor;
+    color: var(--bg) !important;
+  }
+
+  .ready-banner .move-hint {
+    font-size: 10px; opacity: 0.45; margin-top: 6px;
+    animation: readyPulse 1.5s ease-in-out infinite;
   }
   @keyframes readyPulse { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
 
@@ -208,7 +230,10 @@
   <div id="final-score">0 / 0</div>
   <div id="perfect-msg"></div>
   <div class="score-breakdown" id="breakdown"></div>
-  <button class="btn" id="restart-btn">PLAY AGAIN</button>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+    <button class="btn" id="replay-btn" style="border-color:var(--p2);color:var(--p2);">WATCH REPLAY</button>
+    <button class="btn" id="restart-btn">PLAY AGAIN</button>
+  </div>
 </div>
 
 <script>
@@ -317,7 +342,9 @@ function initGame() {
     totalScore: 0,
     running: false,
     finished: false,
+    waitingForButton: false,
     waitingForInput: false,
+    replaying: false,
     lastMoveTime: 0,
   };
 }
@@ -335,7 +362,8 @@ function startRound() {
   gs.tick = 0;
   gs.lastDrainSecond = -1;
   gs.running = false;
-  gs.waitingForInput = true;
+  gs.waitingForButton = true;
+  gs.waitingForInput = false;
   const p = gs.players[gs.currentPlayer];
   p.carrying = null;
   p.carryIndex = -1;
@@ -349,7 +377,14 @@ function startRound() {
   banner.style.display = 'block';
   banner.style.color = COLORS[gs.currentPlayer];
   banner.style.borderColor = COLORS[gs.currentPlayer];
-  banner.innerHTML = `P${gs.currentPlayer+1} — MOVE TO START`;
+  banner.innerHTML = `
+    <div class="ready-label">ROUND ${gs.currentPlayer+1} OF 4</div>
+    <button class="ready-btn" id="ready-go-btn" style="color:${COLORS[gs.currentPlayer]};border-color:${COLORS[gs.currentPlayer]};">
+      START P${gs.currentPlayer+1}
+    </button>
+  `;
+
+  document.getElementById('ready-go-btn').addEventListener('click', readyToMove);
 
   document.getElementById('timer').textContent = ROUND_TIME.toFixed(1);
   const bar = document.getElementById('timer-bar');
@@ -358,6 +393,21 @@ function startRound() {
   document.getElementById('round').textContent = (gs.currentPlayer+1)+'/4';
   updateCarryIndicator();
   render();
+}
+
+function readyToMove() {
+  const gs = gameState;
+  if (!gs.waitingForButton) return;
+  gs.waitingForButton = false;
+  gs.waitingForInput = true;
+
+  const banner = document.getElementById('ready-banner');
+  banner.innerHTML = `
+    <div style="font-size:14px;">P${gs.currentPlayer+1}</div>
+    <div class="move-hint">MOVE TO START TIMER</div>
+  `;
+  banner.style.color = COLORS[gs.currentPlayer];
+  banner.style.borderColor = COLORS[gs.currentPlayer];
 }
 
 function beginRound() {
@@ -558,8 +608,12 @@ function replayGhosts(tick) {
 // ─── PLAYER MOVE ───
 function handleMove(dx, dy) {
   const gs = gameState;
-  if (gs.finished) return;
+  if (gs.finished || gs.replaying) return;
 
+  // Must click Start button first
+  if (gs.waitingForButton) return;
+
+  // After button clicked, first move starts the timer
   if (gs.waitingForInput) {
     beginRound();
   }
@@ -785,6 +839,291 @@ function endGame() {
   }
 }
 
+// ─── REPLAY SYSTEM ───
+function startReplay() {
+  const gs = gameState;
+  document.getElementById('end-overlay').style.display = 'none';
+
+  // Reset world state for replay
+  for (const item of gs.items) { item.pickedUp = false; item.pickedBy = -1; item.pickedTick = -1; }
+  for (const key of gs.keys) { key.pickedUp = false; key.pickedBy = -1; key.pickedTick = -1; key.delivered = false; }
+  for (const b of gs.beacons) { b.count = b.maxCount; b.completed = false; }
+  gs.chest.keysInserted = 0;
+  gs.chest.unlocked = false;
+  for (const p of gs.players) { p.carrying = null; p.carryIndex = -1; }
+  gs.totalScore = 0;
+
+  // Reset player positions
+  STARTS.forEach((s, i) => { gs.players[i].x = s[0]; gs.players[i].y = s[1]; });
+
+  gs.replaying = true;
+  gs.replayTick = 0;
+  gs.replayStartTime = performance.now();
+  gs.lastDrainSecond = -1;
+
+  // Show replay HUD
+  document.getElementById('round').textContent = '▶ REPLAY';
+  document.getElementById('timer').textContent = '10.0';
+  document.getElementById('carrying').textContent = '';
+  const bar = document.getElementById('timer-bar');
+  bar.style.width = '100%';
+  bar.style.background = 'linear-gradient(90deg, #ff4d6a, #4daaff, #4dff91, #ffcc4d)';
+
+  // Light up all player indicators
+  for (let i = 0; i < NUM_PLAYERS; i++) {
+    const el = document.getElementById('ind-'+i);
+    el.className = 'player-ind p'+(i+1)+' active';
+  }
+
+  requestAnimationFrame(replayLoop);
+}
+
+function replayLoop(timestamp) {
+  const gs = gameState;
+  if (!gs.replaying) return;
+
+  const elapsed = (timestamp - gs.replayStartTime) / 1000;
+  const remaining = Math.max(0, ROUND_TIME - elapsed);
+  const newTick = Math.floor(elapsed * 10);
+
+  document.getElementById('timer').textContent = remaining.toFixed(1);
+  const bar = document.getElementById('timer-bar');
+  bar.style.width = ((remaining / ROUND_TIME) * 100) + '%';
+
+  // Advance replay ticks
+  while (gs.replayTick < newTick && gs.replayTick < 100) {
+    gs.replayTick++;
+    replayAllPlayers(gs.replayTick);
+  }
+
+  // Beacon drain once per second
+  const sec = Math.floor(elapsed);
+  if (sec > gs.lastDrainSecond && sec <= ROUND_TIME) {
+    gs.lastDrainSecond = sec;
+    // Drain beacons with all 4 players
+    for (const b of gs.beacons) {
+      if (b.completed) continue;
+      let adj = 0;
+      for (let pi = 0; pi < NUM_PLAYERS; pi++) {
+        if (isAdjacent(gs.players[pi].x, gs.players[pi].y, b.x, b.y)) adj++;
+      }
+      if (adj > 0) {
+        b.count = Math.max(0, b.count - adj);
+        if (b.count <= 0) {
+          b.completed = true;
+          gs.totalScore += BEACON_REWARD;
+          popEffects.push({ x: b.x, y: b.y, t: performance.now(), text: '+'+BEACON_REWARD, color: '#ff8c42' });
+        }
+      }
+    }
+  }
+
+  updateScoreDisplay();
+  renderReplay(timestamp);
+
+  if (remaining <= 0) {
+    gs.replaying = false;
+    // Show end overlay again after a brief pause
+    setTimeout(() => {
+      document.getElementById('end-overlay').style.display = 'flex';
+    }, 800);
+    return;
+  }
+
+  requestAnimationFrame(replayLoop);
+}
+
+function replayAllPlayers(tick) {
+  const gs = gameState;
+  for (let p = 0; p < NUM_PLAYERS; p++) {
+    const entry = gs.players[p].recording.find(r => r.tick === tick);
+    if (!entry) continue;
+    gs.players[p].x = entry.x;
+    gs.players[p].y = entry.y;
+
+    // Gem pickup
+    if (!gs.players[p].carrying) {
+      for (let ii = 0; ii < gs.items.length; ii++) {
+        const item = gs.items[ii];
+        if (!item.pickedUp && item.x === entry.x && item.y === entry.y) {
+          item.pickedUp = true; item.pickedBy = p; item.pickedTick = tick;
+          gs.players[p].carrying = 'gem'; gs.players[p].carryIndex = ii;
+          break;
+        }
+      }
+    }
+    // Key pickup
+    if (!gs.players[p].carrying) {
+      for (let ki = 0; ki < gs.keys.length; ki++) {
+        const key = gs.keys[ki];
+        if (!key.pickedUp && !key.delivered && key.x === entry.x && key.y === entry.y) {
+          key.pickedUp = true; key.pickedBy = p; key.pickedTick = tick;
+          gs.players[p].carrying = 'key'; gs.players[p].carryIndex = ki;
+          break;
+        }
+      }
+    }
+
+    // Gem drop at corner
+    if (gs.players[p].carrying === 'gem' && isCorner(entry.x, entry.y)) {
+      gs.players[p].carrying = null; gs.players[p].carryIndex = -1;
+      gs.totalScore++;
+    }
+    // Key drop at chest
+    if (gs.players[p].carrying === 'key' && entry.x === gs.chest.x && entry.y === gs.chest.y && !gs.chest.unlocked) {
+      gs.keys[gs.players[p].carryIndex].delivered = true;
+      gs.players[p].carrying = null; gs.players[p].carryIndex = -1;
+      gs.chest.keysInserted++;
+      if (gs.chest.keysInserted >= NUM_KEYS) {
+        gs.chest.unlocked = true;
+        gs.totalScore += CHEST_REWARD;
+        popEffects.push({ x: gs.chest.x, y: gs.chest.y, t: performance.now(), text: '+'+CHEST_REWARD, color: '#e8b530' });
+      }
+    }
+  }
+}
+
+function renderReplay(timestamp) {
+  const gs = gameState;
+  const now = timestamp || performance.now();
+  ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+  ctx.fillStyle = '#0e0e16';
+  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+  // Grid
+  ctx.strokeStyle = '#1a1a28'; ctx.lineWidth = 1;
+  for (let i = 0; i <= GRID; i++) {
+    ctx.beginPath(); ctx.moveTo(i*CELL, 0); ctx.lineTo(i*CELL, CANVAS_SIZE); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i*CELL); ctx.lineTo(CANVAS_SIZE, i*CELL); ctx.stroke();
+  }
+
+  // Corners
+  ctx.fillStyle = '#ffffff08';
+  for (const [cx, cy] of CORNERS) {
+    ctx.fillRect(cx*CELL+1, cy*CELL+1, CELL-2, CELL-2);
+    ctx.strokeStyle = '#ffffff20'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx*CELL+CELL/2, cy*CELL+CELL/2, S(12), 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx*CELL+CELL/2, cy*CELL+CELL/2, S(5), 0, Math.PI*2); ctx.stroke();
+  }
+
+  // Gems
+  for (const item of gs.items) {
+    if (item.pickedUp) continue;
+    ctx.shadowColor = '#c084fc'; ctx.shadowBlur = S(12);
+    ctx.fillStyle = '#c084fc';
+    ctx.font = `${S(20)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('◆', item.x*CELL+CELL/2, item.y*CELL+CELL/2);
+    ctx.shadowBlur = 0;
+  }
+
+  // Keys
+  for (const key of gs.keys) {
+    if (key.pickedUp || key.delivered) continue;
+    ctx.shadowColor = '#3dd9d6'; ctx.shadowBlur = S(10);
+    ctx.fillStyle = '#3dd9d6';
+    ctx.font = `bold ${S(20)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('⚷', key.x*CELL+CELL/2, key.y*CELL+CELL/2);
+    ctx.shadowBlur = 0;
+  }
+
+  // Chest
+  {
+    const cx = gs.chest.x*CELL+CELL/2, cy = gs.chest.y*CELL+CELL/2;
+    if (gs.chest.unlocked) {
+      ctx.globalAlpha = 0.25; ctx.fillStyle = '#e8b530';
+      ctx.font = `${S(18)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('📦', cx, cy); ctx.globalAlpha = 1;
+    } else {
+      ctx.fillStyle = `rgba(232,181,48,0.08)`;
+      ctx.fillRect(gs.chest.x*CELL+2, gs.chest.y*CELL+2, CELL-4, CELL-4);
+      ctx.shadowColor = '#e8b530'; ctx.shadowBlur = gs.chest.keysInserted > 0 ? S(12) : S(6);
+      ctx.fillStyle = '#e8b530';
+      ctx.font = `${S(18)}px serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('📦', cx, cy); ctx.shadowBlur = 0;
+      const slotY = cy + S(18);
+      for (let k = 0; k < NUM_KEYS; k++) {
+        const slotX = cx + (k - (NUM_KEYS-1)/2) * S(12);
+        ctx.fillStyle = k < gs.chest.keysInserted ? '#3dd9d6' : '#333348';
+        ctx.beginPath(); ctx.arc(slotX, slotY, S(3.5), 0, Math.PI*2); ctx.fill();
+      }
+    }
+  }
+
+  // Beacons
+  const allPos = [];
+  for (let i = 0; i < NUM_PLAYERS; i++) {
+    allPos.push({ x: gs.players[i].x, y: gs.players[i].y, p: i });
+  }
+  for (const b of gs.beacons) {
+    const bx = b.x*CELL+CELL/2, by = b.y*CELL+CELL/2;
+    if (b.completed) {
+      ctx.globalAlpha = 0.15; ctx.strokeStyle = '#ff8c42'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(bx, by, S(18), 0, Math.PI*2); ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.fillStyle = 'rgba(255,140,66,0.25)';
+      ctx.font = `bold ${S(14)}px 'Silkscreen', cursive`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('OK', bx, by+1);
+      continue;
+    }
+    let adjCount = 0;
+    for (const pos of allPos) { if (isAdjacent(pos.x, pos.y, b.x, b.y)) adjCount++; }
+    const pulse = adjCount > 0 ? 0.5 + 0.5*Math.sin(now/150) : 0;
+
+    if (adjCount > 0) {
+      ctx.shadowColor = '#ff8c42'; ctx.shadowBlur = S(8);
+      for (const pos of allPos) {
+        if (isAdjacent(pos.x, pos.y, b.x, b.y)) {
+          ctx.strokeStyle = `rgba(255,140,66,${0.2+pulse*0.3})`; ctx.lineWidth = 2;
+          ctx.setLineDash([S(4), S(4)]); ctx.beginPath();
+          ctx.moveTo(pos.x*CELL+CELL/2, pos.y*CELL+CELL/2); ctx.lineTo(bx, by);
+          ctx.stroke(); ctx.setLineDash([]);
+        }
+      }
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = `rgba(255,140,66,${0.3+pulse*0.4})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(bx, by, S(24), 0, Math.PI*2); ctx.stroke();
+    }
+    const progress = 1 - b.count / b.maxCount;
+    ctx.fillStyle = `rgba(255,140,66,${0.06+progress*0.14})`;
+    ctx.beginPath(); ctx.arc(bx, by, S(20), 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#ff8c42'; ctx.lineWidth = S(3);
+    ctx.beginPath(); ctx.arc(bx, by, S(20), -Math.PI/2, -Math.PI/2+Math.PI*2*progress); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,140,66,0.3)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(bx, by, S(20), 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = adjCount > 0 ? '#ffb070' : '#ff8c42';
+    ctx.font = `bold ${S(16)}px 'Silkscreen', cursive`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(b.count, bx, by+1);
+    if (adjCount > 1) {
+      ctx.fillStyle = 'rgba(255,200,100,0.8)';
+      ctx.font = `bold ${S(10)}px 'Silkscreen', cursive`;
+      ctx.fillText('x'+adjCount, bx, by-S(26));
+    }
+  }
+
+  // Pop effects
+  for (let i = popEffects.length-1; i >= 0; i--) {
+    const pop = popEffects[i];
+    const age = (now - pop.t) / 1000;
+    if (age > 1.5) { popEffects.splice(i,1); continue; }
+    const px = pop.x*CELL+CELL/2, py = pop.y*CELL+CELL/2;
+    const alpha = Math.max(0, 1 - age/1.2);
+    ctx.globalAlpha = alpha * 0.6; ctx.strokeStyle = pop.color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(px, py, S(20)+age*S(50), 0, Math.PI*2); ctx.stroke();
+    ctx.globalAlpha = alpha; ctx.fillStyle = pop.color;
+    ctx.font = `bold ${S(16)}px 'Silkscreen', cursive`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(pop.text, px, py - S(25) - age*S(40)); ctx.globalAlpha = 1;
+  }
+
+  // All 4 players rendered as solid (not ghost) during replay
+  for (let i = 0; i < NUM_PLAYERS; i++) {
+    const p = gs.players[i];
+    drawPlayer(p.x, p.y, COLORS[i], COLORS[i], false, p.carrying, i+1);
+  }
+}
+
 // ─── RENDER ───
 function render(timestamp) {
   const gs = gameState;
@@ -860,7 +1199,7 @@ function render(timestamp) {
   }
 
   // Beacons
-  const positions = (gs.running || gs.waitingForInput) ? getAllPositions(gs) : [];
+  const positions = (gs.running || gs.waitingForInput || gs.waitingForButton) ? getAllPositions(gs) : [];
   for (const b of gs.beacons) {
     const bx = b.x*CELL+CELL/2, by = b.y*CELL+CELL/2;
 
@@ -1025,6 +1364,7 @@ canvas.addEventListener('touchend', e => {
 
 document.getElementById('start-btn').addEventListener('click', startGame);
 document.getElementById('restart-btn').addEventListener('click', startGame);
+document.getElementById('replay-btn').addEventListener('click', startReplay);
 
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
