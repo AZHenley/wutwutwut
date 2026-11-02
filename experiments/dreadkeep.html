@@ -570,9 +570,9 @@ function heroTier(d){let r=HTIER[0];for(const x of HTIER)if(d>=x[0])r=x;return r
 const heroName=h=>h.cho?'The Chosen One':heroTier(h.d)[1];
 /* Heroes: several can be on the road at once. Your army focuses the Chosen One if he's out, otherwise whoever is closest to the keep.
    A hero who reaches the keep doesn't leave: he besieges it, draining malice every second until he is killed. */
-/* A hero's HP is sized to your army (income × this reign's army upgrades, over his walk), times a threat level that grows ×1.45 for every 10× malice this reign, and 1% more for every hero you beat.
+/* A hero's HP is sized to your army (income × this reign's army upgrades, over his walk), times a threat level: 0.3, ×1.15 for every 10× malice this reign, and 3% more for every hero you beat.
    Bane of Heroes and tapping are what keep you ahead. */
-function heroThreat(d){const L=Math.max(0,Math.log10(S.runTotal+1)-(Math.log10(R0().req)-9));return .03*Math.pow(1.45,L)*Math.pow(1.01,d)}
+function heroThreat(d){const L=Math.max(0,Math.log10(S.runTotal+1)-(Math.log10(R0().req)-9));return .3*Math.pow(1.15,L)*Math.pow(1.03,d)}
 function spawnHero(){const d=S.heroLv,champ=d%10===9,hp=Math.max(40,(.5*C.P+.5)*C.armyRun*22*heroThreat(d))*(champ?2:1);S.heroes.push({d,hp,max:hp,t:0,champ})}
 /* The Chosen One is sized to your army at the moment he is born (this reign's upgrades, not your Dark Arts),
    then grows on his own: ×2.5 to ×3.8 (by realm) every time you beat him. Bane of Heroes is what lets you outgrow him. */
@@ -760,7 +760,8 @@ function renderTop(){
  $('hint').hidden=M.st.taps>=3||M.flags.store;
 }
 function renderAll(force){
- if(!M.flags.store&&(S.malice>=10||Object.values(S.own).some(n=>n>0))){M.flags.store=1;say('store')}
+ if(!M.flags.store&&(S.malice>=10||Object.values(S.own).some(n=>n>0)))M.flags.store=1;
+ if(M.flags.store&&!M.seen.store&&(S.malice>=bulkCost(B[0],1)||S.own.slime>0))say('store');
  if(!M.flags.seal&&S.runTotal>=1e8){M.flags.seal=1;say('seal')}
  renderTop();renderCho();renderUps(force);renderStore(force);renderSeal();
 }
@@ -777,12 +778,13 @@ function artsHTML(){
   h+=`<div class="art"><div class="top"><b>${a.n}</b><span class="lv">${l}/${a.max}</span></div><span>${a.d}</span>${maxed?'<span class="note">Mastered.</span>':`<button class="pbtn ${M.essence>=c?'go':''}" data-act="art" data-arg="${a.id}" ${M.essence<c?'disabled':''}>LEARN · <span class="sym">✦</span>${fmt(c)}</button>`}</div>`}
  return h+'<button class="pbtn go big" data-act="close">CLOSE</button>';
 }
+const VERSION='v21';
 function optHTML(){return `<h2>OPTIONS</h2><p class="note">The game saves in this browser every few seconds.</p>
  <p class="note">All-time malice: ${fmtL(M.allTime)} · taps: ${fmtL(M.st.taps)} · heroes defeated: ${M.st.slain} · Chosen One defeats: ${M.st.chosen} · fairies: ${M.st.fairies} · seals: ${M.seals} · essence earned: ${fmt(M.st.essence)} · realms conquered: ${Math.min(M.realm,4)} · played ${ft(M.play)}</p>
  <button class="pbtn big" data-act="save">SAVE NOW</button><button class="pbtn big" data-act="export">COPY SAVE CODE</button>
  <textarea id="imp" placeholder="Paste a save code here"></textarea><button class="pbtn big" data-act="import">LOAD SAVE CODE</button>
  <button class="pbtn big" data-act="${UI.wipe?'wipe2':'wipe'}" style="${UI.wipe?'background:#e5484d;color:#000':''}">${UI.wipe?'TAP AGAIN TO ERASE ALL':'START OVER'}</button>
- <button class="pbtn go big" data-act="close">CLOSE</button>`}
+ <button class="pbtn go big" data-act="close">CLOSE</button><p class="note" style="text-align:right;margin:6px 0 0;font-size:15px">Dread Keep ${VERSION}</p>`}
 
 /* ================= INPUT ================= */
 $('orb').addEventListener('pointerdown',e=>{
