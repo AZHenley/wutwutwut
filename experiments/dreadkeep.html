@@ -570,9 +570,10 @@ function heroTier(d){let r=HTIER[0];for(const x of HTIER)if(d>=x[0])r=x;return r
 const heroName=h=>h.cho?'The Chosen One':heroTier(h.d)[1];
 /* Heroes: several can be on the road at once. Your army focuses the Chosen One if he's out, otherwise whoever is closest to the keep.
    A hero who reaches the keep doesn't leave: he besieges it, draining malice every second until he is killed. */
-/* A hero's HP is sized to your income (what your base army could deal on his walk), times a threat level that rises 6% with every hero you beat.
-   Army upgrades, Bane of Heroes and tapping are what keep you ahead. */
-function spawnHero(){const d=S.heroLv,champ=d%10===9,hp=Math.max(40,(.5*C.P+.5)*22*.1*Math.pow(1.06,d))*(champ?3:1);S.heroes.push({d,hp,max:hp,t:0,champ})}
+/* A hero's HP is sized to your army (income × this reign's army upgrades, over his walk), times a threat level that grows ×1.45 for every 10× malice this reign, and 1% more for every hero you beat.
+   Bane of Heroes and tapping are what keep you ahead. */
+function heroThreat(d){const L=Math.max(0,Math.log10(S.runTotal+1)-(Math.log10(R0().req)-9));return .03*Math.pow(1.45,L)*Math.pow(1.01,d)}
+function spawnHero(){const d=S.heroLv,champ=d%10===9,hp=Math.max(40,(.5*C.P+.5)*C.armyRun*22*heroThreat(d))*(champ?2:1);S.heroes.push({d,hp,max:hp,t:0,champ})}
 /* The Chosen One is sized to your army at the moment he is born (this reign's upgrades, not your Dark Arts),
    then grows on his own: ×2.5 to ×3.8 (by realm) every time you beat him. Bane of Heroes is what lets you outgrow him. */
 const CHO_GS=[2.5,3,3.8,3.8];
@@ -595,7 +596,7 @@ function heroDefeated(h){
   floatMap(p[0],p[1]-10,'+'+fmt(g),'gold');S.cho.t=choInterval();
   if(S.cho.wins>=R0().need&&M.realm<4){conquer();return}
   toastLine(`The Chosen One fell! (${S.cho.wins}/${R0().need}) +${fmt(g)} malice, +2 essence when you seal. He’ll be back, stronger.`);return}
- const g=Math.max(15,C.P*10)*(h.champ?3:1)*C.loot;earn(g);M.st.slain++;if(h.champ)M.st.champs++;S.heroLv++;
+ const g=Math.max(5,C.P*2.5)*(h.champ?3:1)*C.loot;earn(g);M.st.slain++;if(h.champ)M.st.champs++;S.heroLv++;
  floatMap(p[0],p[1]-10,'+'+fmt(g),'gold');
  toastLine(`${heroName(h)}${h.champ?' (Champion)':''} defeated! +${fmt(g)} malice`);
 }
@@ -610,7 +611,7 @@ function catchFairy(){
  const f=S.fairy,mult=(S.up.f2?2:1)*(1+.25*lv('lore'));S.fairy=null;M.st.fairies++;
  const r=Math.random();
  if(S.up.c3&&r<.12){S.buff.surge=10*mult;toastLine(`Fairy caught: DARK SURGE! Taps ×10 for ${Math.round(10*mult)}s. Tap the orb!`)}
- else if(r<.55){S.buff.frenzy=60*mult;toastLine(`Fairy caught: FRENZY! Malice ×5 for ${Math.round(60*mult)}s.`)}
+ else if(r<.55){S.buff.frenzy=20*mult;toastLine(`Fairy caught: FRENZY! Malice ×5 for ${Math.round(20*mult)}s.`)}
  else{const g=Math.min(S.malice*.1,C.P*300)+13;earn(g);toastLine(`Fairy caught: LUCKY! +${fmt(g)} malice.`);floatMap(f.x,f.y-6,'+'+fmt(g),'gold')}
 }
 function tick(dt){
@@ -648,7 +649,7 @@ function checkAch(){for(const a of ACH)if(!M.ach[a.id]&&a.c()){M.ach[a.id]=1;toa
 function sealGain(){const Rm=R0();if(S.runTotal<Rm.req)return 0;return Math.floor((8+8*Math.log10(S.runTotal/Rm.req)+3*(S.cho?S.cho.wins:0))*(1+.5*Math.min(M.realm,3))*(1+.1*lv('siphon')))}
 function doSeal(gain){const g=gain!=null?gain:sealGain();M.essence+=g;M.st.essence+=g;M.seals++;S=freshRun();calc();setRealm();UI.sealConfirm=0;UI.storeKey='';UI.upKey='';renderAll(true);return g}
 function seal(){if(S.runTotal<R0().req||sealGain()<1)return;doSeal();closeModal();say('reborn',true)}
-function keepFall(){M.st.falls=(M.st.falls||0)+1;const past=S.runTotal>=R0().req,g=doSeal(past?sealGain():Math.max(1,Math.floor(Math.log10(S.runTotal+1)*.7)));
+function keepFall(){M.st.falls=(M.st.falls||0)+1;const past=S.runTotal>=R0().req,g=doSeal(past?sealGain():Math.max(1,Math.floor(Math.log10(S.runTotal+1))));
  openModal(`<h2>YOUR KEEP HAS FALLEN</h2><p>The heroes tore down your gates and dragged you back into the old seal.</p><p>A thousand years pass. You remember everything.</p><p style="color:var(--ess)">+${g} essence</p><p class="note">${past?'':'You fell before the prophecy line, so you only kept a little essence. '}Kill heroes before they reach the keep, or as soon as they arrive. Thick Walls (Dark Arts) adds keep HP.</p><button class="pbtn go big" data-act="arts">DARK ARTS</button><button class="pbtn big" data-act="close">RISE AGAIN</button>`)}
 function forcedSeal(){const g=doSeal();openModal(`<h2>SEALED AWAY</h2><p>The Chosen One drove his sword into your keep, and the old seal closed around you.</p><p>A thousand years pass. You remember everything.</p><p style="color:var(--ess)">+${g} essence</p><p class="note">Spend essence on Dark Arts (✦ at the top), then rise again.</p><button class="pbtn go big" data-act="arts">DARK ARTS</button><button class="pbtn big" data-act="close">RISE AGAIN</button>`)}
 function conquer(){
