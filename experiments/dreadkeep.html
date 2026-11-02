@@ -1,0 +1,846 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dread Keep</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Layout: one column like a handheld screen. Fixed top: title bar, news ticker, the overworld map, the orb + counter.
+   Below it a scrolling list that grows as the game reveals itself. Deliberately single dark theme: an 8-bit night. */
+:root{
+  --bg:#0e0b16; --panel:#19132a; --panel2:#251b3a; --line:#efe6d2; --text:#efe6d2; --muted:#9a8fb2;
+  --mal:#c46cff; --gold:#f7d354; --hp:#e5484d; --good:#6fd35a; --ess:#7fe0ff;
+  --pix:'Press Start 2P','Courier New',monospace; --body:'VT323','Courier New',monospace;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+*,*::before,*::after{box-sizing:border-box}
+html{height:100%}
+body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:var(--body);font-size:20px;line-height:1.15;overflow:hidden;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+#app{height:100%;max-width:540px;margin:0 auto;display:flex;flex-direction:column;gap:8px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:calc(10px + env(safe-area-inset-top,0px)) 0}
+.bar{display:flex;align-items:center;gap:8px;flex:none}
+.bar h1{white-space:nowrap;font-family:var(--pix);font-size:13px;font-weight:400;margin:0;color:var(--mal);letter-spacing:.06em;text-shadow:2px 2px 0 #000}
+.bar .realm{font-size:17px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.bar .sp{flex:1}
+.pbtn{font-family:var(--pix);font-size:10px;color:var(--text);background:var(--panel2);border:2px solid var(--line);box-shadow:2px 2px 0 #000;padding:6px 8px;cursor:pointer;touch-action:manipulation;white-space:nowrap}
+.pbtn:active{transform:translate(2px,2px);box-shadow:none}
+.pbtn.ess{color:var(--ess)}
+.sym{font-family:var(--body);font-size:1.9em;line-height:0;vertical-align:-.12em;margin-right:.15em}
+.pbtn:focus-visible,.item:focus-visible,.utile:focus-visible,#orb:focus-visible{outline:2px dashed var(--gold);outline-offset:2px}
+.ticker{flex:none;font-size:17px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:2px dotted #3a2f55;padding-bottom:4px;transition:opacity .4s}
+.mapwrap{position:relative;flex:none;border:3px solid var(--line);box-shadow:0 0 0 3px #000,4px 4px 0 3px #000;background:#000;line-height:0}
+#map{display:block;width:100%;height:auto;max-height:36vh;object-fit:contain;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:manipulation;cursor:pointer}
+.core{flex:none;display:flex;align-items:center;gap:14px;position:relative;padding:2px 0}
+#orb{flex:none;width:96px;height:96px;padding:0;border:none;background:none;cursor:pointer;touch-action:manipulation;transition:transform .07s}
+#orb.bump{transform:scale(.9)}
+#orbc{width:96px;height:96px;image-rendering:pixelated;display:block}
+.count{min-width:0;flex:1}
+.mal{font-family:var(--pix);font-size:clamp(14px,4.6vw,20px);color:var(--text);text-shadow:2px 2px 0 #000;word-break:break-word;line-height:1.3;font-variant-numeric:tabular-nums}
+.lbl{font-size:18px;color:var(--mal)}
+.ps{font-size:19px;color:var(--muted)}
+.extra{font-size:17px;color:var(--muted);display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:2px}
+.extra .cho{color:var(--gold)}
+.pill{font-family:var(--pix);font-size:9px;padding:3px 5px;border:2px solid currentColor;color:var(--gold);animation:blink 1s steps(2) infinite}
+.pill.s{color:#ff7ad9}
+@keyframes blink{50%{opacity:.6}}
+.float{position:absolute;font-family:var(--pix);font-size:11px;color:var(--mal);text-shadow:1px 1px 0 #000;pointer-events:none;animation:up 1s ease-out forwards;white-space:nowrap;z-index:5}
+.float.dmg{color:#fff}.float.gold{color:var(--gold)}
+@keyframes up{to{transform:translateY(-40px);opacity:0}}
+.scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:14px;padding:4px 2px 120px;overscroll-behavior:contain}
+.hint{font-family:var(--pix);font-size:11px;color:var(--gold);text-align:center;padding:18px 0;animation:blink 1.2s steps(2) infinite;line-height:1.6}
+h2{font-family:var(--pix);font-size:11px;font-weight:400;margin:0 0 8px;color:var(--gold);letter-spacing:.05em;line-height:1.5}
+h3{font-family:var(--pix);font-size:10px;font-weight:400;margin:6px 0 4px;color:var(--ess);letter-spacing:.05em}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.mult{display:flex;gap:4px}
+.mult .pbtn{padding:4px 6px;font-size:9px}
+.mult .pbtn.on{background:var(--mal);color:#000}
+.store{display:flex;flex-direction:column;gap:8px}
+.item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;align-items:center;width:100%;text-align:left;font:inherit;color:var(--text);background:var(--panel);border:2px solid var(--line);box-shadow:3px 3px 0 #000;padding:6px 10px 6px 6px;cursor:pointer;touch-action:manipulation}
+.item:active:not(.no){transform:translate(2px,2px);box-shadow:1px 1px 0 #000}
+.item.no{opacity:.5;cursor:default}
+.item.unk{border-style:dashed}
+.item.unk .nm{color:var(--muted)}
+.item canvas{width:44px;height:44px;image-rendering:pixelated;background:#0b0912;border:2px solid #3a2f55}
+.item .nm{font-family:var(--pix);font-size:10px;line-height:1.4;color:var(--text)}
+.item .cs{font-size:19px;color:var(--mal)}
+.item .cs.no{color:#8a6b9a}
+.item .sb{font-size:16px;color:var(--muted)}
+.item .ow{font-family:var(--pix);font-size:16px;color:#5d5078}
+.ups{display:flex;flex-wrap:wrap;gap:6px}
+.utile{width:46px;height:46px;padding:0;border:2px solid var(--line);background:#0b0912;cursor:pointer;box-shadow:2px 2px 0 #000;touch-action:manipulation}
+.utile canvas{width:100%;height:100%;image-rendering:pixelated;display:block}
+.utile.no{opacity:.45}
+.utile.sel{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold)}
+.uinfo{margin-top:8px;background:var(--panel);border:2px solid var(--line);padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+.uinfo b{font-family:var(--pix);font-size:10px;font-weight:400;color:var(--gold);line-height:1.5}
+.box{background:var(--panel);border:3px solid var(--line);box-shadow:0 0 0 3px #000;padding:12px}
+.box p{margin:4px 0}
+.box.gold{border-color:var(--gold)}
+.big{width:100%;font-size:11px;padding:10px;margin-top:6px}
+.go{background:var(--mal);color:#000}
+.go:disabled{background:var(--panel2);color:var(--muted);cursor:default}
+.note{color:var(--muted);font-size:17px}
+.meter{display:flex;gap:4px;margin:6px 0}
+.meter i{flex:1;height:12px;border:2px solid var(--line);background:#0b0912}
+.meter i.on{background:var(--gold)}
+.meter i.best{background:#5d5078}
+.cracks{color:var(--hp)}
+.art{border:2px solid #3a2f55;padding:8px;display:flex;flex-direction:column;gap:2px}
+.art .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.art b{font-family:var(--pix);font-size:9px;font-weight:400;color:var(--text);line-height:1.5}
+.art .lv{font-family:var(--pix);font-size:9px;color:var(--ess);white-space:nowrap}
+.art .pbtn{align-self:flex-end;font-size:9px}
+#dlg{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);width:min(calc(100% - 32px),508px);z-index:30;background:#000;border:3px solid var(--line);box-shadow:0 0 0 3px #000,0 6px 0 3px rgba(0,0,0,.5);padding:12px 14px 22px;font-size:20px;line-height:1.2;cursor:pointer}
+#dlg::after{content:"▼";position:absolute;right:12px;bottom:4px;font-size:12px;color:var(--gold);animation:blink .8s steps(2) infinite}
+#dlg b{color:var(--gold);font-weight:400}
+#modal{position:fixed;inset:0;z-index:40;background:rgba(5,3,10,.8);display:grid;place-items:center;padding:20px max(16px,env(safe-area-inset-left,0px))}
+#mbox{max-width:460px;width:100%;max-height:84vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+#mbox h2{font-size:13px}
+.ach{display:grid;grid-template-columns:22px 1fr;gap:6px;align-items:start;font-size:18px}
+.ach .st{font-size:18px;color:var(--gold)}
+.ach.off{color:#5d5078}.ach.off .st{color:#3a2f55}
+textarea{font-family:var(--body);font-size:16px;background:#0b0912;color:var(--text);border:2px solid var(--line);padding:6px;min-height:56px;width:100%}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="bar">
+    <h1>DREAD KEEP</h1><span class="realm" id="realmLbl"></span><span class="sp"></span>
+    <button class="pbtn ess" id="essBtn" data-act="arts" hidden>✦0</button>
+    <button class="pbtn" id="infBtn" data-act="inf" hidden>★0</button>
+    <button class="pbtn" data-act="opt" aria-label="options">≡</button>
+  </header>
+  <div class="ticker" id="ticker">The kingdom of Eldmoor is peaceful.</div>
+  <div class="mapwrap" id="mapwrap"><canvas id="map" width="192" height="120" aria-label="The realm, seen from above. Your keep is top right; heroes come from the bottom left."></canvas></div>
+  <section class="core" id="core">
+    <button id="orb" aria-label="Tap the orb to gather malice"><canvas id="orbc" width="32" height="32"></canvas></button>
+    <div class="count">
+      <div class="mal" id="mal">0</div>
+      <div class="lbl">malice</div>
+      <div class="ps" id="ps" hidden></div>
+      <div class="extra" id="extra"></div>
+    </div>
+  </section>
+  <div class="scroll" id="scroll">
+    <div class="hint" id="hint">TAP THE ORB</div>
+    <section id="choSec" hidden></section>
+    <section id="upSec" hidden><h2>UPGRADES</h2><div class="ups" id="ups"></div><div id="uinfo"></div></section>
+    <section id="storeSec" hidden>
+      <div class="row"><h2>SUMMON MINIONS</h2><div class="mult" id="mult" hidden></div></div>
+      <div class="store" id="store"></div>
+    </section>
+    <section id="sealSec" hidden></section>
+  </div>
+</div>
+<div id="dlg" hidden></div>
+<div id="modal" hidden><div class="box" id="mbox"></div></div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const rand=(a,b)=>a+Math.random()*(b-a);
+function mb(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const NAMES=['','thousand','million','billion','trillion','quadrillion','quintillion','sextillion','septillion','octillion','nonillion','decillion','undecillion','duodecillion'];
+const SH=['','K','M','B','T','Qa','Qi','Sx','Sp','Oc','No','Dc','UDc','DDc'];
+function fmtL(n){if(n<1e6)return Math.floor(n).toLocaleString('en-US');let i=0;while(n>=1000&&i<NAMES.length-1){n/=1000;i++}return n.toFixed(3)+' '+NAMES[i]}
+function fmt(n){if(n<1000)return n<100&&n%1?(Math.floor(n*10)/10).toString():Math.floor(n).toString();let i=0;while(n>=1000&&i<SH.length-1){n/=1000;i++}return (n<10?n.toFixed(2):n<100?n.toFixed(1):Math.floor(n))+SH[i]}
+function ft(s){s=Math.max(0,Math.round(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${m}m`:m?`${m}m ${s%60}s`:`${s}s`}
+
+/* ================= DATA ================= */
+const REALMS=[
+ {n:'Eldmoor',title:'the Kingdom of Eldmoor',kind:'kingdom',req:1e9,need:5,unlock:11,origin:'the village'},
+ {n:'Varrow',title:'the Continent of Varrow',kind:'continent',req:1e13,need:6,unlock:14,origin:'the High King’s city'},
+ {n:'the World',title:'the Whole World',kind:'world',req:1e17,need:7,unlock:17,origin:'the far shore'},
+ {n:'the Heavens',title:'the Heavens',kind:'heavens',req:1e21,need:8,unlock:19,origin:'the Sun'}
+];
+const B=[
+ {id:'slime',n:'Slime',pl:'Slimes',cost:15,p:.1,d:'A wobbly blob of pure spite.'},
+ {id:'bat',n:'Bat Swarm',pl:'Bat Swarms',cost:100,p:1,d:'Screeching shadows that sour the night.'},
+ {id:'skel',n:'Skeleton',pl:'Skeletons',cost:1100,p:8,d:'Rattles around frightening sheep.'},
+ {id:'goblin',n:'Goblin Camp',pl:'Goblin Camps',cost:12000,p:47,d:'Raids caravans and sends you a cut.'},
+ {id:'dungeon',n:'Dungeon',pl:'Dungeons',cost:130000,p:260,d:'Traps, puzzles, and the key is always in the wrong room.'},
+ {id:'grave',n:'Haunted Graveyard',pl:'Graveyards',cost:1.4e6,p:1400,d:'The dead don’t rest. They work night shifts.'},
+ {id:'temple',n:'Cursed Temple',pl:'Cursed Temples',cost:2e7,p:7800,d:'Cultists chant your name. Flattering.'},
+ {id:'fort',n:'Dark Fortress',pl:'Dark Fortresses',cost:3.3e8,p:44000,d:'Spiky towers looming on the horizon.'},
+ {id:'dragon',n:'Dragon',pl:'Dragons',cost:5.1e9,p:260000,d:'Burns things. Sleeps on gold. Very on-brand.'},
+ {id:'portal',n:'Shadow Portal',pl:'Shadow Portals',cost:7.5e10,p:1.6e6,d:'A rift to a dimension made of bad vibes.'},
+ {id:'eclipse',n:'Eclipse Engine',pl:'Eclipse Engines',cost:1e12,p:1e7,d:'A machine that dims the sun. A prototype.'},
+ {id:'lich',n:'Lich Citadel',pl:'Lich Citadels',cost:1.4e13,p:6.5e7,d:'Undead scholars who never take a day off.'},
+ {id:'serpent',n:'Sea Serpent',pl:'Sea Serpents',cost:1.7e14,p:4.3e8,d:'Sinks ships, keeps the treasure.'},
+ {id:'titan',n:'Titan Forge',pl:'Titan Forges',cost:2.1e15,p:2.9e9,d:'Giants hammering out armies of iron.'},
+ {id:'miasma',n:'Miasma Cloud',pl:'Miasma Clouds',cost:2.6e16,p:2.1e10,d:'A fog of gloom that drifts across oceans.'},
+ {id:'moon',n:'Moon Siphon',pl:'Moon Siphons',cost:3.1e17,p:1.5e11,d:'Drains the moonlight. Werewolves are furious.'},
+ {id:'wserp',n:'World Serpent',pl:'World Serpents',cost:3.7e18,p:1.1e12,d:'Wraps around the planet and squeezes.'},
+ {id:'stareater',n:'Star Eater',pl:'Star Eaters',cost:4.4e19,p:8.3e12,d:'Swallows constellations whole.'},
+ {id:'snuffer',n:'Sun Snuffer',pl:'Sun Snuffers',cost:5.2e20,p:6.4e13,d:'A very, very large candle snuffer.'}
+];
+const UN={
+ slime:['Stickier Ooze','Slime Mitosis','Royal Jelly','Gelatinous Cubes','The Slime King'],
+ bat:['Echo Screech','Vampire Fangs','Night Wings','Bat Cathedral','Eternal Twilight'],
+ skel:['Rattling Bones','Rusty Swords','Bone Armor','Marrow Magic','Army of the Grave'],
+ goblin:['Spiky Clubs','Goblin Greed','War Drums','Goblin Engineers','Goblin Warlord'],
+ dungeon:['Spike Pits','Rolling Boulders','Pushable Blocks','Keys in Wrong Rooms','Labyrinth Masters'],
+ grave:['Restless Dead','Fog Machines','Wailing Ghosts','Bone Harvest','Necropolis'],
+ temple:['Cursed Idols','Dark Rituals','Blood Moon Altar','Forbidden Scriptures','High Priest of Woe'],
+ fort:['Iron Portcullis','Lava Moat','Gargoyle Sentinels','Siege Engines','Citadel of Night'],
+ dragon:['Dragon Eggs','Hoard of Gold','Fire Breath','Elder Wyrms','Dragon Emperor'],
+ portal:['Unstable Rifts','Void Whispers','Shadow Legions','Dimensional Anchors','The Other Side'],
+ eclipse:['Solar Shroud','Moon Gears','Total Darkness','Eternal Night','The Last Sunset'],
+ lich:['Phylactery Vaults','Bone Libraries','Soul Lanterns','Undying Council','The Archlich'],
+ serpent:['Salt Fangs','Whirlpool Coils','Shipwreck Hoards','Abyssal Brood','Leviathan'],
+ titan:['Bellows of Ash','Iron Giants','Mountain Hammers','Forge of Ages','Titan King'],
+ miasma:['Stale Air','Wilting Winds','Grey Fog','Endless Haze','The Great Miasma'],
+ moon:['Lunar Tides','Silver Drain','Tidal Pull','The Dark Side','Moon Harvest'],
+ wserp:['Ring of Scales','Tail Bite','Continental Coil','World Crush','Ouroboros'],
+ stareater:['Stardust Snacks','Comet Gulp','Nebula Feast','Galaxy Bites','Void Glutton'],
+ snuffer:['Brass Handle','Long Reach','Solar Cap','Eternal Dusk','Lights Out']
+};
+const TIERS=[[1,10],[5,50],[25,500],[50,5e4],[100,5e6]];
+const U=[];
+B.forEach(b=>TIERS.forEach(([n,m],i)=>U.push({id:b.id+i,n:UN[b.id][i],d:`${b.pl} make twice as much malice.`,cost:b.cost*m,req:()=>S.own[b.id]>=n,ic:b.id,tier:i,b:b.id})));
+U.push(
+ {id:'c1',n:'Cursed Fingertip',d:'Tapping the orb gives twice as much.',cost:100,req:()=>M.st.taps>=40,ic:'hand',click2:1},
+ {id:'c2',n:'Wicked Knuckles',d:'Tapping the orb gives twice as much.',cost:500,req:()=>S.own.slime>=5,ic:'hand',click2:1},
+ {id:'c3',n:'Gauntlet of Spite',d:'Each tap also gives 1% of your malice per second.',cost:1e4,req:()=>S.own.skel>=1,ic:'hand',pct:.01},
+ {id:'c4',n:'Hand of Doom',d:'Each tap gives another 1% of your malice per second.',cost:1e6,req:()=>S.own.dungeon>=1,ic:'hand',pct:.01},
+ {id:'c5',n:'Tyrant’s Grip',d:'Each tap gives another 2% of your malice per second.',cost:1e8,req:()=>S.own.temple>=1,ic:'hand',pct:.02},
+ {id:'c6',n:'Fist of the Eclipse',d:'Each tap gives another 3% of your malice per second.',cost:1e11,req:()=>S.own.dragon>=1,ic:'hand',pct:.03},
+ {id:'h1',n:'Spiked Road',d:'Your minions hit heroes twice as hard.',cost:2000,req:()=>M.st.slain>=3,ic:'sword',army:2},
+ {id:'h2',n:'Bounty on Heroes',d:'Defeated heroes drop twice as much malice.',cost:2e4,req:()=>M.st.slain>=10,ic:'sword',loot:2},
+ {id:'h3',n:'Ambush Tactics',d:'Heroes walk 30% slower, so your minions get more hits in.',cost:2e5,req:()=>M.st.slain>=20,ic:'sword',slow:1},
+ {id:'h4',n:'Mirror Traps',d:'Your minions hit heroes 3× as hard.',cost:5e7,req:()=>M.st.slain>=40,ic:'sword',army:3},
+ {id:'h5',n:'Trophy Room',d:'+1% malice for every 5 heroes you have ever defeated (up to +100%).',cost:1e9,req:()=>M.st.slain>=75,ic:'sword',trophy:1},
+ {id:'f1',n:'Fairy Nets',d:'Fairies show up twice as often.',cost:7777,req:()=>M.st.fairies>=3,ic:'fairy'},
+ {id:'f2',n:'Bottled Fairies',d:'Fairy effects last twice as long.',cost:777777,req:()=>M.st.fairies>=7,ic:'fairy'},
+ {id:'i1',n:'Evil Laugh',d:'Each infamy star gives another +1% malice.',cost:9e5,req:()=>achCount()>=15,ic:'star'},
+ {id:'i2',n:'Grand Monologue',d:'Each infamy star gives another +2% malice.',cost:9e9,req:()=>achCount()>=35,ic:'star'}
+);
+/* Dark Arts: bought with essence. Every level costs more than the last. */
+const ARTS=[
+ {g:'Power',id:'momentum',n:'Dark Momentum',d:'+25% malice per level.',b:2,x:1.45,max:40},
+ {g:'Power',id:'swift',n:'Swift Summoning',d:'Minions cost 3% less per level.',b:3,x:1.6,max:10},
+ {g:'Power',id:'touch',n:'Cursed Touch',d:'Orb taps ×2 per level.',b:1,x:2,max:6},
+ {g:'Power',id:'legions',n:'Remembered Legions',d:'Start each reign with 10 of one more minion type per level, Slimes first.',b:3,x:1.8,max:8},
+ {g:'Power',id:'hoard',n:'Buried Hoard',d:'Start each reign with malice: 1,000 at level 1, ×10 each level after.',b:2,x:1.7,max:8},
+ {g:'Heroes',id:'bane',n:'Bane of Heroes',d:'You and your minions hit heroes 1.5× harder per level.',b:2,x:1.5,max:25},
+ {g:'Heroes',id:'bounty',n:'Hero Bounties',d:'Defeated heroes drop +50% malice per level.',b:2,x:1.6,max:5},
+ {g:'Heroes',id:'omens',n:'Delaying Omens',d:'The Chosen One waits 20% longer between visits per level.',b:4,x:1.8,max:5},
+ {g:'Heroes',id:'walls',n:'Thick Walls',d:'Your keep survives one more crack from the Chosen One per level.',b:8,x:2.5,max:3},
+ {g:'Fortune',id:'fairy',n:'Fairy Lure',d:'Fairies show up 25% more often per level.',b:2,x:1.6,max:5},
+ {g:'Fortune',id:'lore',n:'Fairy Lore',d:'Fairy effects last 25% longer per level.',b:3,x:1.6,max:5},
+ {g:'Fortune',id:'patient',n:'Patient Evil',d:'+10% malice while you’re away per level (starts at 50%).',b:2,x:1.5,max:5},
+ {g:'Fortune',id:'siphon',n:'Essence Siphon',d:'+10% essence from each Sealing per level.',b:5,x:1.6,max:10}
+];
+const HTIER=[[0,'Village Kid','#b08a5a'],[4,'Squire','#3d66cc'],[10,'Knight','#8d8a9c'],[20,'Paladin','#f6f1e4'],[32,'Hero of Legend','#d0463f']];
+const ACH=[];
+[[1e3,'Mildly Menacing'],[1e5,'Local Nuisance'],[1e6,'Regional Threat'],[1e8,'Kingdom-wide Dread'],[1e9,'Dark Lord'],[1e11,'Overlord'],[1e12,'Eternal Darkness'],[1e14,'Beyond Evil'],[1e16,'Continental Gloom'],[1e18,'Global Menace'],[1e20,'Cosmic Dread'],[1e22,'The End of Light']].forEach(([v,n])=>ACH.push({id:'m'+v,n,d:`Gather ${fmtL(v)} malice in total.`,c:()=>M.allTime>=v}));
+B.forEach(b=>[[1,`Your First ${b.n}`],[50,`${b.n} Horde`],[100,`${b.pl} Everywhere`]].forEach(([v,n])=>ACH.push({id:b.id+'_'+v,n,d:`Own ${v} ${v===1?b.n:b.pl}.`,c:()=>S.own[b.id]>=v})));
+[[100,'Tap Tap Evil'],[1000,'Finger of Doom'],[10000,'Carpal Tunnel of Darkness']].forEach(([v,n])=>ACH.push({id:'t'+v,n,d:`Tap the orb ${fmtL(v)} times.`,c:()=>M.st.taps>=v}));
+[[1,'First Blood'],[10,'Hero Hunter'],[50,'Bane of Heroes'],[100,'Legend Ender'],[250,'No More Heroes'],[1000,'Hero Shortage']].forEach(([v,n])=>ACH.push({id:'s'+v,n,d:`Defeat ${v} ${v===1?'hero':'heroes'}.`,c:()=>M.st.slain>=v}));
+ACH.push({id:'pots',n:'My Pots!',d:'Let a hero reach your keep.',c:()=>M.st.reached>=1});
+ACH.push({id:'champ',n:'Champion Crusher',d:'Defeat a Champion (every 10th hero).',c:()=>M.st.champs>=1});
+[[1,'Fairy in a Bottle'],[7,'Fairy Collector'],[27,'Fairy Hoarder']].forEach(([v,n])=>ACH.push({id:'f'+v,n,d:`Catch ${v} ${v===1?'fairy':'fairies'}.`,c:()=>M.st.fairies>=v}));
+[[10,'Steady Dread'],[1000,'Rising Darkness'],[1e6,'Torrent of Spite'],[1e9,'Malice Incarnate'],[1e12,'Unstoppable']].forEach(([v,n])=>ACH.push({id:'p'+v,n,d:`Make ${fmtL(v)} malice per second.`,c:()=>C.P>=v}));
+[[1,'Sealed Away'],[5,'Always Comes Back'],[15,'Recurring Villain']].forEach(([v,n])=>ACH.push({id:'x'+v,n,d:`Be sealed away ${v===1?'once':v+' times'}.`,c:()=>M.seals>=v}));
+[[1,'Prophecy Denied'],[10,'The Chosen Few'],[40,'Chosen No More']].forEach(([v,n])=>ACH.push({id:'ch'+v,n,d:`Defeat the Chosen One ${v===1?'once':v+' times'} (all-time).`,c:()=>M.st.chosen>=v}));
+REALMS.forEach((r,i)=>ACH.push({id:'r'+i,n:`Conqueror of ${r.n}`,d:`Conquer ${r.title}.`,c:()=>M.realm>i}));
+const NEWS=[
+ [()=>M.realm===0,'The kingdom of Eldmoor is peaceful. Nobody locks their doors.'],
+ [()=>M.realm===0,'Village elder: “Strange lights in the old tower again. Probably swamp gas.”'],
+ [()=>S.own.slime>0,'Farmer reports “a puddle that looked at me funny.”'],
+ [()=>S.own.slime>=10,'Slime sightings up 400%. Experts recommend boots.'],
+ [()=>S.own.bat>0,'Bats now outnumber owls.'],
+ [()=>S.own.skel>0,'Gravedigger quits, citing “clients walking off.”'],
+ [()=>S.own.goblin>0,'Merchant caravans now travel with more guards and fewer goods.'],
+ [()=>S.own.dungeon>0,'Adventurers’ guild posts its first dungeon map. It is mostly question marks.'],
+ [()=>S.own.grave>0,'Ghosts unionize, demand better haunting hours.'],
+ [()=>S.own.temple>0,'Cult membership surges. Free robes cited as main draw.'],
+ [()=>S.own.fort>0,'Spiky castle appears on the horizon. House prices drop.'],
+ [()=>S.own.dragon>0,'Dragon spotted. Sheep population declines sharply.'],
+ [()=>S.own.portal>0,'A portal opens by the mill. The mill is now “elsewhere”.'],
+ [()=>S.own.eclipse>0,'The sun flickers. Candle sales skyrocket.'],
+ [()=>S.own.lich>0,'Liches open a library. Late fees are your soul.'],
+ [()=>S.own.serpent>0,'Navy reports “a very long fish”. The navy is now a smaller navy.'],
+ [()=>S.own.titan>0,'Earthquakes traced to giants hammering. They say it’s “for a project”.'],
+ [()=>S.own.miasma>0,'World weather report: grey, with a chance of grey.'],
+ [()=>S.own.moon>0,'The moon is noticeably smaller tonight.'],
+ [()=>S.own.wserp>0,'Geographers baffled: the world now has a tail.'],
+ [()=>S.own.stareater>0,'Astronomers report the Great Bear constellation is now the Medium Bear.'],
+ [()=>S.own.snuffer>0,'Something enormous is lowering itself toward the sun.'],
+ [()=>M.st.slain>=10,'Hero recruitment posters now say “mostly safe”.'],
+ [()=>M.st.slain>=50,'The Hero Academy reports record dropout rates.'],
+ [()=>M.st.reached>0,'Hero returns from the tower with smashed pots and loot. Ten more set out.'],
+ [()=>M.st.fairies>0,'Fairy population declining. Bottle sales up.'],
+ [()=>!!S.cho,'Bards sing of the Chosen One. You have heard the song. It is very catchy and you hate it.'],
+ [()=>!!S.cho&&S.cho.cracks>0,'Cracks spread through the Dark Lord’s keep. The kingdom celebrates early.'],
+ [()=>M.realm>=1,'The High King of Varrow says Eldmoor “was always a bit gloomy anyway”.'],
+ [()=>M.realm>=2,'World leaders meet to discuss the Dark Lord. The meeting is held in the dark.'],
+ [()=>M.realm>=3,'The Sun issues a statement: “I’m not worried.”'],
+ [()=>M.seals>0,'Historians argue whether the Dark Lord was ever truly beaten. So does the Dark Lord.']
+];
+
+/* ================= STATE ================= */
+let S,M,C={P:0,Pf:0,per:{},click:1,army:1,loot:1};
+const lv=id=>M.arts[id]||0;
+const R0=()=>REALMS[Math.min(M.realm,3)];
+function freshMeta(){return{v:'dk2',allTime:0,essence:0,seals:0,realm:0,arts:{},best:[0,0,0,0],ach:{},known:{},seen:{},
+ st:{taps:0,slain:0,reached:0,fairies:0,champs:0,chosen:0,essence:0},flags:{},play:0}}
+function freshRun(){
+ const own={};B.forEach(b=>own[b.id]=0);
+ const r={malice:0,runTotal:0,own,up:{},seenUp:{},heroLv:0,hero:null,heroT:12,fairy:null,fairyT:40,buff:{frenzy:0,surge:0},cho:null,startRealm:M?M.realm:0};
+ if(M){const L=lv('legions');B.slice(0,Math.min(L,R0().unlock)).forEach(b=>r.own[b.id]=10);const h=lv('hoard');if(h)r.malice=1000*Math.pow(10,h-1)}
+ return r;
+}
+const achCount=()=>Object.keys(M.ach).length;
+function calc(){
+ const ach=achCount();
+ let g=(1+.01*ach)*(1+.25*lv('momentum'))*Math.pow(3,M.realm);
+ if(S.up.i1)g*=1+.01*ach;if(S.up.i2)g*=1+.02*ach;
+ if(S.up.h5)g*=1+Math.min(1,.01*Math.floor(M.st.slain/5));
+ let P=0;const per={};
+ for(const b of B){let m=1;for(let i=0;i<5;i++)if(S.up[b.id+i])m*=2;per[b.id]=b.p*m*g;P+=per[b.id]*S.own[b.id]}
+ let c2=0,pct=0,army=1,loot=1;
+ for(const u of U)if(S.up[u.id]){if(u.click2)c2++;if(u.pct)pct+=u.pct;if(u.army)army*=u.army;if(u.loot)loot*=u.loot}
+ const Pf=P*(S.buff.frenzy>0?7:1);
+ const click=(Math.pow(2,c2+lv('touch'))+Pf*pct)*(S.buff.surge>0?777:1);
+ C={P,Pf,per,click,armyRun:army,army:army*Math.pow(1.5,lv('bane')),loot:loot*(1+.5*lv('bounty'))};
+}
+const armyDps=()=>(.5*C.Pf+.5)*C.army;
+function earn(x){S.malice+=x;S.runTotal+=x;M.allTime+=x}
+const costMult=()=>1-.03*lv('swift');
+function bulkCost(b,n){const own=S.own[b.id];return Math.ceil(b.cost*costMult()*Math.pow(1.15,own)*(Math.pow(1.15,n)-1)/.15)}
+const artCost=a=>Math.ceil(a.b*Math.pow(a.x,lv(a.id)));
+const maxCracks=()=>3+lv('walls');
+const choInterval=()=>120*(1+.2*lv('omens'));
+
+/* ================= SPRITES ================= */
+const PAL={k:'#100c18',w:'#f6f1e4',g:'#79d04a',G:'#3e8a3a',p:'#a65be6',P:'#5b2d86',b:'#e9e4d2',r:'#8d8a9c',R:'#d0463f',t:'#8c5a2c',T:'#5e3a1a',y:'#ffd84a',m:'#c06bff',d:'#3b3150',h:'#6e3f1f',s:'#f1c7a0',u:'#3d66cc',c:'#e7dcc4',o:'#f08a30'};
+const SP={
+ slime:["........","...kk...","..kggk..",".kgwggk.","kggggggk","kgkggkgk","kggggggk",".kkkkkk."],
+ slime2:["........","........","...kk...",".kkggkk.","kgwggggk","kgkggkgk","kggggggk","kkkkkkkk"],
+ bat:["k......k","pk....kp","ppk..kpp","pppkkppp",".kpwwpk.","..kppk..","...kk...","........"],
+ bat2:["........","........","...kk...","..kppk..","kkpwwpkk","pppppppp","pk.kk.kp","k......k"],
+ skel:["..kkkk..",".kbbbbk.",".kbkkbk.",".kbbbbk.","..kkkk..",".kbbbbk.","..kbbk..",".kb..bk."],
+ skel2:["..kkkk..",".kbbbbk.",".kbkkbk.",".kbbbbk.","..kkkk..",".kbbbbk.","..kbbk..","..kbbk.."],
+ goblin:["...kRR..","...k....","...kk...","..kttk..",".kttttk.",".ktkktk.","kttkkttk","kkkkkkkk"],
+ dungeon:["...rr...","..rrrr..",".rrwrrr.",".rrrrrr.","rrkkkkrr","rkkkkkkr","rkRkkRkr","rkkkkkkr"],
+ grave:["........","..kkkk..",".krrrrk.",".krkkrk.",".krrrrk.",".krrrrk.","kkkkkkkk","........"],
+ temple:["...kk...","..kPPk..",".kPPPPk.","kkkkkkkk",".kbkkbk.",".kbkkbk.",".kbkkbk.","kkkkkkkk"],
+ fort:["k.k..k.k","kkkkkkkk","kddddddk","kdmddmdk","kddddddk","kddkkddk","kddkkddk","kkkkkkkk"],
+ dragon:["R......R","RR....RR","RRRkkRRR",".RkRRkR.","..RRRR..","..kRRk..","...RR...","...R...."],
+ dragon2:["........","...kk...","..kRRk..","RRRRRRRR","RR.RR.RR","R..RR..R","...RR...","...R...."],
+ portal:["..kkkk..",".kmmmmk.","kmkkkkmk","kmkmmkmk","kmkmkkmk","kmkkkmmk",".kmmmmk.","..kkkk.."],
+ eclipse:["o..oo..o",".okkkko.",".kkkkkk.","okkkkkko","okkkkkko",".kkkkkk.",".okkkko.","o..oo..o"],
+ lich:["..kkkk..",".kwwwwk.",".kwkkwk.",".kwwwwk.","..kmmk..",".kmmmmk.","kmmmmmmk","kkkkkkkk"],
+ serpent:["..kk....",".kGGk...",".kGkk.k.","..kGkkGk","...kGGk.",".k..kk..","kGk.....",".k......"],
+ titan:["...oy...","..oyyo..","...oo...","kkkkkkkk",".krrrrk.","..krrk..",".krrrrk.","kkkkkkkk"],
+ miasma:["..gggg..",".gggggg.","ggkggkgg","gggggggg",".ggkkgg.","..gggg..",".g.g.g..","g.g.g.g."],
+ moon:["..kkkk..",".kmmk...","kmmk....","kmmk....","kmmk....","kmmk....",".kmmk...","..kkkk.."],
+ wserp:[".kkkkkk.","kGGGGGGk","kGk..kGk","kGk..kGk","kGk..kRk","kGk..kGk","kGGGGGGk",".kkkkkk."],
+ stareater:["k.k..k.k",".kkkkkk.","kmwkkwmk","kmmmmmmk","kwkwkwkk","kkkkkkkk","kwkwkwkk",".kkkkkk."],
+ snuffer:["...kk...","..kddk..","..kddk..",".kddddk.",".kddddk.","kddddddk","kkkkkkkk","...k...."],
+ hero:["..hhh...",".hhhhh..",".hsksk..","..sss..w",".uuuuu.w","s.uuu.sw","..uuu...","..k.k..."],
+ hero2:["..hhh...",".hhhhh..",".hsksk..","..sss..w",".uuuuu.w","s.uuu.sw","..uuu...",".k...k.."],
+ house:["...RR...","..RRRR..",".RRRRRR.","RRRRRRRR",".cccccc.",".cyccyc.",".cckkcc.",".cckkcc."],
+ kc:["...kR...","...kRR..","k.kk.k.k","kkkkkkkk","kcckkcck","kcccccck","kcckkcck","kkkkkkkk"],
+ tree:["..GGGG..",".GggggG.","GggggggG","GgggGggG",".GGggGG.","...tt...","...tt...","........"],
+ dead:["........",".t....t.","..t..t..","t..tt..t",".t.tt.t.","...tt...","...tt...","........"],
+ mount:["...kk...","..kwwk..",".kwrrrk.",".krrrrk.","krrrrrrk","krrrrrrk","rrrrrrrr","........"],
+ hand:["..k.k...",".kskskk.",".ksksksk",".kssssk.","kssssssk","kssssssk",".kssssk.","..kkkk.."],
+ sword:["......kw",".....kwk","....kwk.","...kwk..","k.kwk...",".kyk....",".ky.k...","k..k...."],
+ fairy:["w......w","ww.kk.ww","wwkppkww",".kpwppk.",".kppppk.","..kppk..","...kk...","........"],
+ star:["...yy...","...yy...","yyyyyyyy",".yyyyyy.","..yyyy..",".yy..yy.","yy....yy","........"]
+};
+const scache={};
+function sprite(name,over){const key=name+(over?JSON.stringify(over):'');if(scache[key])return scache[key];
+ const rows=SP[name],pal=over?{...PAL,...over}:PAL,c=document.createElement('canvas');c.width=8;c.height=8;const x=c.getContext('2d');
+ rows.forEach((r,j)=>{for(let i=0;i<8;i++){const ch=r[i];if(ch&&ch!=='.'){x.fillStyle=pal[ch]||'#f0f';x.fillRect(i,j,1,1)}}});return scache[key]=c}
+const SIL={};Object.keys(PAL).forEach(k=>SIL[k]='#000');
+
+/* ================= MAPS (one per realm; each zooms out from the last) ================= */
+const MW=192,MH=120,TW=24,TH=15,CAST=[21,1];
+const MAPS={};let MP;
+function finishMap(m,ROADW,sea){
+ const {tiles}=m;
+ for(let i=0;i<ROADW.length-1;i++){const [x0,y0]=ROADW[i],[x1,y1]=ROADW[i+1],dx=Math.sign(x1-x0),dy=Math.sign(y1-y0);let x=x0,y=y0;
+  for(;;){const T=tiles[y][x];T.t=(T.t==='w'||T.t==='br'||T.t==='sr')?sea:(T.t==='z'||T.t==='sp')?'sp':'r';if(x===x1&&y===y1)break;x+=dx;y+=dy}}
+ for(let y=0;y<3;y++)for(let x=19;x<24;x++)tiles[y][x].t='c';
+ m.PATH=ROADW.map(([x,y])=>[x*8+4,y*8+4]);m.PLEN=[];m.PTOT=0;
+ for(let i=0;i<m.PATH.length-1;i++){const l=Math.hypot(m.PATH[i+1][0]-m.PATH[i][0],m.PATH[i+1][1]-m.PATH[i][1]);m.PLEN.push(l);m.PTOT+=l}
+ m.GATE=m.PATH[m.PATH.length-1];m.CAND=[];m.MOUNT=[];m.WATER=[];
+ for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){const T=tiles[y][x],d=Math.hypot(x-CAST[0],y-CAST[1]),o={x,y,d,key:x+','+y};
+  if(y>0&&(T.t==='g'||T.t==='t'||T.t==='z'))m.CAND.push(o);if(T.t==='m')m.MOUNT.push(o);if(T.t==='w')m.WATER.push([x,y])}
+ m.CAND.sort((a,b)=>a.d-b.d);m.MOUNT.sort((a,b)=>a.d-b.d);
+ m.base=document.createElement('canvas');m.base.width=MW;m.base.height=MH;m.key=-1;
+ return m;
+}
+function genKingdom(){
+ const r=mb(1234),tiles=[];
+ for(let y=0;y<TH;y++){tiles.push([]);for(let x=0;x<TW;x++)tiles[y].push({t:'g',n:r()})}
+ for(let y=0;y<TH;y++){const x=11+Math.round(Math.sin(y*.6)*1.2);tiles[y][x].t='w'}
+ for(let y=10;y<15;y++)for(let x=0;x<5;x++)tiles[y][x].t='v';
+ [[13,0],[14,0],[15,0],[16,0],[17,0],[18,0],[14,1],[15,1],[16,1],[17,1],[13,2],[16,2],[22,5],[23,5],[23,6],[21,6],[22,7]].forEach(([x,y])=>{tiles[y][x].t='m'});
+ for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){const T=tiles[y][x];if(T.t==='g'&&r()<.2)T.t='t'}
+ const m=finishMap({r:0,kind:'kingdom',tiles,houses:[[2,82],[14,81],[28,84],[3,107],[27,108]],kings:[]},[[2,12],[6,12],[6,9],[14,9],[14,6],[18,6],[18,3],[20,3]],'br');
+ for(let y=10;y<15;y++)for(let x=0;x<5;x++)if(tiles[y][x].t==='v')tiles[y][x].t='g';
+ for(const [hx,hy] of m.houses){const T=tiles[hy>>3][hx>>3];if(T.t==='g'||T.t==='t')T.t='v'}
+ m.CAND=m.CAND.filter(c=>tiles[c.y][c.x].t!=='v');
+ return m;
+}
+function genRealm(r){
+ const kind=REALMS[r].kind,rnd=mb(777+r*31),G=[];for(let i=0;i<40;i++)G.push(rnd());
+ const vn=(x,y)=>{const gx=x/5,gy=y/5,x0=Math.floor(gx),y0=Math.floor(gy),fx=gx-x0,fy=gy-y0,h=(a,b)=>G[(a*7+b*13+r*3)%40];
+  const sx=fx*fx*(3-2*fx),sy=fy*fy*(3-2*fy);return (h(x0,y0)*(1-sx)+h(x0+1,y0)*sx)*(1-sy)+(h(x0,y0+1)*(1-sx)+h(x0+1,y0+1)*sx)*sy};
+ const tiles=[];
+ for(let y=0;y<TH;y++){tiles.push([]);for(let x=0;x<TW;x++){let t;
+  if(kind==='heavens')t='z';else{const n=vn(x,y)+(x>17&&y<5?.5:0),sea=kind==='continent'?.3:.5;t=n<sea?'w':n>.8?'m':rnd()<.2?'t':'g'}
+  tiles[y].push({t,n:rnd()})}}
+ const W={continent:[[1,13],[5,13],[5,8],[10,8],[10,5],[15,5],[15,3],[20,3]],world:[[1,12],[4,12],[4,9],[9,9],[9,11],[13,11],[13,6],[17,6],[17,3],[20,3]],heavens:[[2,12],[6,12],[6,7],[11,7],[11,10],[15,10],[15,4],[18,4],[18,3],[20,3]]}[kind];
+ const kings={continent:[[1,12],[7,4],[12,12],[3,3],[9,1]],world:[[2,11],[7,4],[12,13],[5,1],[15,9]],heavens:[[8,2],[13,13],[4,4],[9,12]]}[kind];
+ kings.forEach(([x,y])=>{tiles[y][x].t='k'});
+ const m=finishMap({r,kind,tiles,houses:[],kings},W,'sr');
+ kings.forEach(([x,y])=>{tiles[y][x].t='k'});
+ m.CAND=m.CAND.filter(c=>tiles[c.y][c.x].t!=='k');
+ return m;
+}
+function getMap(r){return MAPS[r]||(MAPS[r]=r===0?genKingdom():genRealm(r))}
+/* Corruption is measured as a share of the map's tiles. A gentle start for the first 1,000 malice,
+   then a steady ~12% of the map per 10x malice, reaching the whole map at the same point as always (10 billion in the Kingdom). */
+function corrShare(L){return L<3?.14*Math.pow(L/3,2):Math.min(1,.14+(L-3)/7*.86)}
+function corrR(){if(M.realm>3)return 99;const m=MP;if(!m.DS){m.DS=[];for(let y=0;y<TH;y++)for(let x=0;x<TW;x++)m.DS.push(Math.hypot(x-CAST[0],y-CAST[1])+(m.tiles[y][x].n-.5)*1.6);m.DS.sort((a,b)=>a-b)}
+ const off=Math.log10(R0().req)-9,L=Math.max(0,Math.log10(S.runTotal+1)-off),f=corrShare(L);if(f>=1)return m.DS[m.DS.length-1]+.01;return Math.max(1.2,m.DS[Math.floor(f*(m.DS.length-1))]+.001)}
+const isCor=(m,x,y,R)=>Math.hypot(x-CAST[0],y-CAST[1])+(m.tiles[y][x].n-.5)*1.6<=R;
+function ground(c,px,py,T,cor){
+ let col,dot,n=3;
+ switch(T.t){
+  case 'w':col=cor?'#2c4436':'#3a6fd8';dot=cor?'#5f8a3a':'#8fc0ff';break;
+  case 'r':col=cor?'#54465a':'#caa66c';dot=cor?'#3e3346':'#a8844f';break;
+  case 'br':col='#8c5a2c';dot='#5e3a1a';break;
+  case 'sr':col=cor?'#2c4436':'#3a6fd8';dot=cor?'#54465a':'#e7dcc4';break;
+  case 'z':case 'sp':col=cor?'#150a20':'#07061a';dot=cor?'#3a1f52':'#ffffff';n=T.n>.5?2:1;break;
+  default:col=cor?'#36244e':'#4f9a4a';dot=cor?'#563a78':'#66b35a';
+ }
+ c.fillStyle=col;c.fillRect(px,py,8,8);const r=mb(T.n*1e6|0);c.fillStyle=dot;for(let i=0;i<n;i++)c.fillRect(px+(r()*8|0),py+(r()*8|0),1,1);
+ if(T.t==='br'){c.fillStyle='#5e3a1a';for(let i=1;i<8;i+=2)c.fillRect(px+i,py,1,8)}
+ if(T.t==='sr'){c.fillStyle=cor?'#7a6a8a':'#f6f1e4';c.fillRect(px+1,py+4,2,1);c.fillRect(px+5,py+4,2,1)}
+ if(T.t==='sp'){c.fillStyle=cor?'#5b2d86':'#ffd84a';c.fillRect(px+1,py+4,1,1);c.fillRect(px+5,py+3,1,1)}
+}
+function planet(c,cx,cy,rr,col,cor){c.fillStyle=cor?'#2a1640':col;c.beginPath();c.arc(cx,cy,rr,0,7);c.fill();c.fillStyle=cor?'#4a2a6a':'rgba(255,255,255,.35)';c.fillRect(cx-rr/2,cy-rr/2,2,1);c.strokeStyle=cor?'#5b2d86':'#e7dcc4';c.lineWidth=1;c.beginPath();c.ellipse(cx,cy,rr+3,1.5,-.3,0,7);c.stroke()}
+function drawRealmBase(m,c,R){
+ for(let y=0;y<TH;y++)for(let x=0;x<TW;x++){const T=m.tiles[y][x],cor=isCor(m,x,y,R),px=x*8,py=y*8;
+  ground(c,px,py,T.t==='k'?{t:m.kind==='heavens'?'z':'g',n:T.n}:T.t==='c'?{t:m.kind==='heavens'?'z':'g',n:T.n}:T,cor);
+  if(T.t==='t')c.drawImage(sprite(cor?'dead':'tree'),px,py);
+  if(T.t==='m')c.drawImage(sprite('mount',cor?{r:'#4a4058',w:'#c06bff'}:null),px,py);
+  if(T.t==='k'){if(m.kind==='heavens')planet(c,px+4,py+4,3,['#e88a4a','#6fb0e8','#9ad06a','#e8d06a'][(x+y)%4],cor);else c.drawImage(sprite('kc',cor?{R:'#3b3150',c:'#4a4458',w:'#4a4458'}:{R:['#d0463f','#3d66cc','#f7d354','#6fd35a'][(x+y)%4]}),px,py)}}
+ for(const [hx,hy] of m.houses){const cor=isCor(m,hx>>3,hy>>3,R);c.drawImage(sprite('house',cor?{R:'#3b3150',y:'#100c18',c:'#6a6070'}:null),hx,hy)}
+ if(m.r>0){const prev=fullCanvas(m.r-1);c.fillStyle='#000';c.fillRect(145,0,47,31);c.imageSmoothingEnabled=false;c.drawImage(prev,147,1,44,28);c.strokeStyle='#c06bff';c.lineWidth=1;c.strokeRect(146.5,.5,45,29)}
+}
+function fullCanvas(r){const m=getMap(r);if(m.full)return m.full;const cv=document.createElement('canvas');cv.width=MW;cv.height=MH;const c=cv.getContext('2d');drawRealmBase(m,c,99);drawKeep(c,m,0,3);return m.full=cv}
+function renderBase(){const R=corrR(),key=Math.floor(R*3);if(key===MP.key)return;MP.key=key;drawRealmBase(MP,MP.base.getContext('2d'),R)}
+function pathAt(t){const m=MP;let d=t*m.PTOT;for(let i=0;i<m.PLEN.length;i++){if(d<=m.PLEN[i]){const u=d/m.PLEN[i];return[m.PATH[i][0]+(m.PATH[i+1][0]-m.PATH[i][0])*u,m.PATH[i][1]+(m.PATH[i+1][1]-m.PATH[i][1])*u]}d-=m.PLEN[i]}return m.PATH[m.PATH.length-1].slice()}
+let STAT=[];
+const SCAP={goblin:10,dungeon:8,grave:12,temple:6,fort:6,lich:6,titan:6,moon:4,stareater:6,snuffer:4};
+/* Buildings claim corrupted tiles in a fixed, scattered order (near tiles mixed with far ones),
+   so each new building lands somewhere new and the whole set spreads out as corruption grows. */
+function layoutStatics(){
+ const R=corrR(),occ=new Set(),out=[];
+ if(!MP.ORD){const r=mb(99+MP.r);MP.ORD=MP.CAND.map(c=>({...c,k:c.d*.35+14*r()})).sort((a,b)=>a.k-b.k);MP.MORD=MP.MOUNT.map(c=>({...c,k:c.d-6*r()})).sort((a,b)=>a.k-b.k)}
+ const ids=Object.keys(SCAP),need=ids.map(id=>Math.min(S.own[id]||0,SCAP[id])),max=Math.max(0,...need);
+ for(let i=0;i<max;i++)for(let j=0;j<ids.length;j++){if(i>=need[j])continue;const id=ids[j];let c=null;
+  if(id==='dungeon')c=MP.MORD.find(m=>!occ.has(m.key)&&isCor(MP,m.x,m.y,R))||null;
+  if(!c)c=MP.ORD.find(o=>!occ.has(o.key)&&isCor(MP,o.x,o.y,R))||null;
+  if(!c)continue;occ.add(c.key);out.push({id,i,x:c.x*8,y:c.y*8,tx:c.x,ty:c.y})}
+ STAT=out.sort((a,b)=>a.y-b.y);
+}
+let WAND=[];
+const WCAP={slime:22,skel:16,bat:11,dragon:6,portal:6,serpent:6,miasma:8,wserp:1};
+const CAPS={...SCAP,...WCAP,eclipse:1};
+/* Past the cap, each extra minion upgrades one sprite already on the map: tier 1 new colours, tier 2 shimmer, tier 3 glow. */
+function lvlOf(id,i){const cap=CAPS[id],extra=(S.own[id]||0)-cap;if(!cap||extra<=0)return 0;return Math.min(3,Math.floor(extra/cap)+(i<extra%cap?1:0))}
+const ELITE={slime:{g:'#5fe8ff'},bat:{p:'#ff5fa8'},skel:{b:'#d8904a',k:'#3a1a0a'},goblin:{t:'#5a6fd0',R:'#ffd84a'},dungeon:{r:'#6a5fa8',R:'#5fe8ff'},grave:{r:'#6fd3c0'},
+ temple:{P:'#d0463f',b:'#ffd84a'},fort:{d:'#5a1a2a',m:'#ff5f5f'},dragon:{R:'#3fd07a'},portal:{m:'#5fe8ff'},eclipse:{o:'#5fe8ff'},lich:{m:'#6fd35a',w:'#c9f0ff'},
+ serpent:{G:'#c8e04a'},titan:{r:'#ffd84a',o:'#5fe8ff'},miasma:{g:'#c06bff'},moon:{m:'#ffd84a'},wserp:{G:'#ffd84a'},stareater:{m:'#ff5fa8'},snuffer:{d:'#ffd84a'}};
+const glowCol=id=>id==='skel'?'#c06bff':Object.values(ELITE[id]||{x:'#c06bff'})[0];
+function hexA(h,a){const n=parseInt(h.slice(1),16);return `rgba(${n>>16},${n>>8&255},${n&255},${a})`}
+const shcache={};
+function shine(name,id,f){const key=name+id+f;if(shcache[key])return shcache[key];const src=sprite(name,ELITE2[id]),d=src.getContext('2d').getImageData(0,0,8,8).data,c=document.createElement('canvas');c.width=8;c.height=8;const x=c.getContext('2d');x.fillStyle='rgba(255,255,255,.85)';
+ for(let py=0;py<8;py++)for(let px=0;px<8;px++){const s2=px+py;if((s2===f||s2===f-1)&&d[(py*8+px)*4+3]>0)x.fillRect(px,py,1,1)}return shcache[key]=c}
+const ELITE2={slime:{g:'#7aa8ff',w:'#fff'},bat:{p:'#ff3b5c'},skel:{b:'#2b2636',k:'#c06bff'},goblin:{t:'#7a5fd0',R:'#ffd84a'},dungeon:{r:'#8a5fb8',R:'#ffd84a'},grave:{r:'#8fe8d0'},
+ temple:{P:'#ff5f5f',b:'#ffd84a'},fort:{d:'#7a1a2a',m:'#ffd84a'},dragon:{R:'#2b2636',k:'#ffd84a'},portal:{m:'#6fd35a'},eclipse:{o:'#ff5fa8'},lich:{m:'#a8ff6a',w:'#fff'},
+ serpent:{G:'#e0f4ff'},titan:{r:'#fff2a8',o:'#ff5fa8'},miasma:{g:'#ff6ad5'},moon:{m:'#ff9a4a'},wserp:{G:'#ff9a4a'},stareater:{m:'#ffd84a'},snuffer:{d:'#ff9a4a'}};
+const CREATURE={slime:-1,slime2:0,skel:-2,skel2:-2,bat:1,bat2:0,dragon:0,dragon2:-1,serpent:-2,miasma:-2};
+function crown(c,x,y){c.fillStyle='#100c18';c.fillRect(x+2,y+2,4,1);c.fillRect(x+1,y,1,2);c.fillRect(x+6,y,1,2);c.fillStyle='#ffd84a';c.fillRect(x+2,y+1,4,1);c.fillRect(x+2,y,1,1);c.fillRect(x+5,y,1,1);c.fillStyle='#e5484d';c.fillRect(x+3,y,2,1)}
+function banner(c,x,y){c.fillStyle='#100c18';c.fillRect(x+6,y-5,1,6);c.fillStyle='#ffd84a';c.fillRect(x+3,y-5,3,2);c.fillStyle='#e5484d';c.fillRect(x+3,y-4,1,1)}
+function drawUnit(c,name,id,lvl,x,y,t,ph){
+ if(lvl>=3){const col=glowCol(id);c.fillStyle=hexA(col,.2+.12*Math.sin(t*4+ph));c.beginPath();c.arc(x+4,y+4,5.5,0,7);c.fill();
+  c.fillStyle='#fff';const a=t*3+ph;c.fillRect(Math.round(x+4+Math.cos(a)*5),Math.round(y+4+Math.sin(a)*4),1,1)}
+ c.drawImage(lvl>=2?sprite(name,ELITE2[id]):lvl>=1?sprite(name,ELITE[id]):sprite(name),x,y);
+ if(lvl>=2){if(name in CREATURE)crown(c,x,y+CREATURE[name]);else banner(c,x,y)}
+ if(lvl>=3){const f=Math.floor((t*9+ph*7)%20);if(f<16)c.drawImage(shine(name,id,f),x,y)}
+}
+function syncWand(){
+ for(const id in WCAP){const want=Math.min(S.own[id],WCAP[id]),have=WAND.filter(w=>w.id===id);
+  if(have.length>want)have.slice(want).forEach(w=>WAND.splice(WAND.indexOf(w),1));
+  for(let i=have.length;i<want;i++){const p=wanderTarget(id);const q=wanderTarget(id);WAND.push({id,x:q[0],y:q[1],tx:p[0],ty:p[1],w:0,i:WAND.filter(w=>w.id===id).length,ph:Math.random()*6})}}
+}
+/* Wanderers roam the corrupted land. The more of a minion you own, the farther from the keep they roam. */
+function wanderTarget(id){const R=corrR(),reach=Math.min(R,6+2*Math.sqrt(S.own[id]||1));
+ for(let k=0;k<30;k++){const x=4+Math.random()*184,y=34+Math.random()*80,tx=Math.min(TW-1,x>>3),ty=Math.min(TH-1,y>>3),T=MP.tiles[ty][tx];
+  if(T.t==='w'||T.t==='c')continue;const dd=Math.hypot(tx-CAST[0],ty-CAST[1]);if(dd>reach)continue;if(k<25&&Math.random()>dd/reach+.1)continue;if(!isCor(MP,tx,ty,R))continue;return[x,y]}
+ return[MP.GATE[0]-10+Math.random()*20,MP.GATE[1]+8+Math.random()*12]}
+function setRealm(){MP=getMap(Math.min(M.realm,3));MP.key=-1;WAND=[];STAT=[];syncWand();layoutStatics()}
+const mapc=$('map'),mx=mapc.getContext('2d');
+const FX={sparks:[]};
+function drawKeep(c,m,t,force){
+ const st=force!=null?force:(m.r>0?3:S.runTotal>=1e8?3:S.runTotal>=1e5?2:S.runTotal>=1e3?1:0),cx=m.r>0?168:168;
+ const stone='#4a4458',dark='#2b2636',glow=`rgba(196,108,255,${.6+.4*Math.sin(t*3)})`;
+ if(m.r>0){c.fillStyle=stone;c.fillRect(cx-4,18,8,12);c.fillStyle=dark;c.fillRect(cx+2,18,2,12);c.fillStyle='#100c18';c.fillRect(cx-4,18,8,1);c.fillRect(cx-2,25,4,5);for(let i=0;i<8;i+=3)c.fillRect(cx-4+i,16,2,2);c.fillStyle=glow;c.fillRect(cx-1,21,2,2);return}
+ const tower=(x,y,w,h)=>{c.fillStyle=stone;c.fillRect(x,y,w,h);c.fillStyle=dark;c.fillRect(x+w-2,y,2,h);for(let i=0;i<w;i+=3)c.fillRect(x+i,y-2,2,2);c.fillStyle=stone;for(let i=0;i<w;i+=3)c.fillRect(x+i,y-2,1,2);c.fillStyle='#100c18';c.fillRect(x,y,w,1);c.fillRect(x,y,1,h)};
+ if(st>=2){tower(150,12,8,18);tower(180,12,8,18);c.fillStyle=stone;c.fillRect(158,18,22,12);c.fillStyle=dark;for(let i=158;i<180;i+=3)c.fillRect(i,16,2,2)}
+ if(st===0){c.fillStyle=stone;c.fillRect(cx-6,12,12,18);c.fillStyle=dark;c.fillRect(cx+4,12,2,18);c.fillStyle=PAL.k;[[cx-6,12],[cx-3,11],[cx+1,13],[cx+4,10]].forEach(([x,y])=>c.fillRect(x,y,2,2));c.fillStyle='#36244e';c.fillRect(cx-6,10,4,2);c.fillRect(cx+2,9,3,3)}
+ else{const h=st>=3?28:22;tower(cx-7,30-h,14,h);c.fillStyle='#100c18';c.fillRect(cx,30-h-10,1,8);c.fillStyle=PAL.m;c.fillRect(cx+1,30-h-10,5,3)}
+ c.fillStyle=glow;c.fillRect(cx-2,18,3,3);if(st>=2){c.fillRect(153,17,2,2);c.fillRect(183,17,2,2)}
+ c.fillStyle='#100c18';c.fillRect(cx-3,24,6,6);
+ if(st>=3&&force==null){c.fillStyle=`rgba(196,108,255,${.35+.25*Math.sin(t*2)})`;c.beginPath();c.arc(cx,-1+Math.sin(t*2)*1.5,5,0,7);c.fill();c.fillStyle=PAL.R;for(let i=146;i<192;i+=6)c.fillRect(i,31,1,2)}
+}
+function drawMap(now){
+ const c=mx,t=now/1000,fr=Math.floor(t*3)%2,m=MP;
+ renderBase();c.drawImage(m.base,0,0);
+ const R=corrR();
+ c.fillStyle='rgba(200,230,255,.8)';for(const [x,y] of m.WATER){if(isCor(m,x,y,R))continue;const k=(Math.floor(t*2)+x*3+y*5)%7;if(k<2)c.fillRect(x*8+((x*7+y)%6)+1,y*8+((y*5+k*3)%6)+1,2,1)}
+ if(m.kind==='heavens'){const [sx,sy]=m.PATH[0],dead=M.realm>3;c.fillStyle=dead?'#000':`rgba(255,200,60,${.25+.1*Math.sin(t*2)})`;c.beginPath();c.arc(sx,sy,16,0,7);c.fill();c.fillStyle=dead?'#100c18':'#ffd84a';c.beginPath();c.arc(sx,sy,10,0,7);c.fill();if(dead){c.strokeStyle='#f08a30';c.beginPath();c.arc(sx,sy,11,0,7);c.stroke()}
+  if(!dead){c.fillStyle='#fff6c0';for(let i=0;i<8;i++){const a=i/8*6.283+t*.4;c.fillRect(Math.round(sx+Math.cos(a)*13),Math.round(sy+Math.sin(a)*13),1,1)}}}
+ for(const s of STAT){ground(c,s.x,s.y,{t:m.kind==='heavens'?'z':'g',n:m.tiles[s.ty][s.tx].n},isCor(m,s.tx,s.ty,R));drawUnit(c,s.id,s.id,lvlOf(s.id,s.i),s.x,s.y,t,s.tx+s.ty)}
+ drawKeep(c,m,t);
+ for(const w of WAND)if(w.id==='portal'){const P=[[132,40],[184,56],[118,44],[150,70],[100,30],[176,88]][w.i]||[120,60];c.save();c.translate(P[0]+4,P[1]+4);c.rotate(Math.floor(t*6)%4*Math.PI/2);drawUnit(c,'portal','portal',lvlOf('portal',w.i),-4,-4,t,w.ph);c.restore()}
+ const ents=[];
+ for(const w of WAND)if(w.id==='slime'||w.id==='skel'||w.id==='serpent')ents.push({y:w.y,d:()=>drawUnit(c,w.id==='serpent'?'serpent':w.id==='slime'?(fr&&w.w<=0?'slime2':'slime'):(fr&&w.w<=0?'skel2':'skel'),w.id,lvlOf(w.id,w.i),Math.round(w.x-4),Math.round(w.y-8),t,w.ph)});
+ let hp=null;
+ if(S.hero){hp=pathAt(S.hero.t);const h=S.hero;let over;
+  if(h.cho)over={u:'#f7d354',h:'#f6f1e4',w:'#7fe0ff'};else{over={u:heroTier(h.d)[2]};if(h.d<4)over.w='#8c5a2c';if(m.kind==='heavens')over.h='#ffd84a'}
+  ents.push({y:hp[1],d:()=>{const x=Math.round(hp[0]-4),y=Math.round(hp[1]-8);
+   if(h.cho){c.fillStyle=`rgba(255,230,120,${.3+.2*Math.sin(t*6)})`;c.beginPath();c.arc(hp[0],hp[1]-4,8,0,7);c.fill()}
+   if(m.kind!=='kingdom'&&(m.tiles[Math.min(TH-1,hp[1]>>3)][Math.min(TW-1,hp[0]>>3)]||{}).t==='sr'){c.fillStyle='#8c5a2c';c.fillRect(x-1,y+6,10,2);c.fillStyle='#5e3a1a';c.fillRect(x,y+8,8,1)}
+   if(h.champ||h.cho){c.fillStyle=PAL.y;c.fillRect(x+2,y-2,1,1);c.fillRect(x+4,y-2,1,1);c.fillRect(x+6,y-2,1,1);c.fillRect(x+2,y-1,5,1)}
+   c.drawImage(sprite(fr?'hero2':'hero',over),x,y)}})}
+ ents.sort((a,b)=>a.y-b.y).forEach(e=>e.d());
+ for(const w of WAND){
+  if(w.id==='bat'){const x=m.GATE[0]-30+Math.cos(t*.7+w.ph)*Math.min(R*6,80)*(.4+.15*w.i),y=50+Math.sin(t*1.3+w.ph*2)*Math.min(R*3,40);drawUnit(c,fr?'bat2':'bat','bat',lvlOf('bat',w.i),Math.round(x),Math.round(y),t,w.ph)}
+  if(w.id==='dragon'){const a=t*.5+w.i*2.1,rr=26+w.i*8,x=168+Math.cos(a)*rr,y=30+Math.sin(a)*rr*.5;drawUnit(c,fr?'dragon2':'dragon','dragon',lvlOf('dragon',w.i),Math.round(x-4),Math.round(y-4),t,w.ph)}
+  if(w.id==='miasma'){const x=90+Math.cos(t*.15+w.ph)*80,y=50+Math.sin(t*.2+w.i)*35;c.globalAlpha=.8;drawUnit(c,'miasma','miasma',lvlOf('miasma',w.i),Math.round(x),Math.round(y),t,w.ph);c.globalAlpha=1}
+  if(w.id==='wserp'){const L=lvlOf('wserp',0);if(L>=3){c.strokeStyle=hexA('#ffd84a',.3+.2*Math.sin(t*4));c.lineWidth=6;c.beginPath();c.ellipse(96,62,92,56,0,t*.3,t*.3+4.5);c.stroke()}c.strokeStyle=L>=2?`hsl(48,100%,${60+20*Math.sin(t*6)}%)`:L>=1?'#ffd84a':'#3e8a3a';c.lineWidth=2;c.beginPath();c.ellipse(96,62,92,56,0,t*.3,t*.3+4.5);c.stroke();c.strokeStyle='#100c18';c.lineWidth=1;c.beginPath();c.ellipse(96,62,93,57,0,t*.3,t*.3+4.5);c.stroke()}
+ }
+ if(S.fairy){const f=S.fairy,x=f.x,y=f.y;c.fillStyle='rgba(255,140,230,.35)';c.beginPath();c.arc(x,y,5,0,7);c.fill();c.fillStyle='#ff9ee8';c.fillRect(Math.round(x-1),Math.round(y-1),3,3);c.fillStyle='#fff';c.fillRect(Math.round(x),Math.round(y),1,1);
+  c.fillStyle='#e0f4ff';if(fr){c.fillRect(Math.round(x-3),Math.round(y-2),2,1);c.fillRect(Math.round(x+2),Math.round(y-2),2,1)}else{c.fillRect(Math.round(x-3),Math.round(y),2,1);c.fillRect(Math.round(x+2),Math.round(y),2,1)}
+  if(Math.random()<.5)FX.sparks.push({x:x+rand(-2,2),y:y+rand(-2,2),l:.6,c:'#ffc0f0'})}
+ if(S.own.eclipse>0&&m.kind!=='heavens'){c.fillStyle='rgba(20,0,40,.22)';c.fillRect(0,0,MW,MH);drawUnit(c,'eclipse','eclipse',lvlOf('eclipse',0),6,4,t,0)}
+ if(S.buff.frenzy>0){c.fillStyle=`rgba(255,200,60,${.08+.05*Math.sin(t*8)})`;c.fillRect(0,0,MW,MH)}
+ if(S.cho&&S.cho.cracks>0){c.strokeStyle='#e5484d';c.lineWidth=1;const g=m.GATE;for(let i=0;i<S.cho.cracks;i++){c.beginPath();c.moveTo(g[0]-6+i*4,g[1]-16);c.lineTo(g[0]-4+i*4,g[1]-10);c.lineTo(g[0]-7+i*4,g[1]-5);c.stroke()}}
+ FX.sparks=FX.sparks.filter(s=>(s.l-=1/60)>0);for(const s of FX.sparks){c.fillStyle=s.c;c.globalAlpha=Math.min(1,s.l*2);c.fillRect(Math.round(s.x),Math.round(s.y),1,1);c.globalAlpha=1}
+ if(S.hero&&hp){const h=S.hero,x=Math.round(hp[0]-6),y=Math.round(hp[1]-12);c.fillStyle='#100c18';c.fillRect(x-1,y-1,14,4);c.fillStyle='#5a1a20';c.fillRect(x,y,12,2);c.fillStyle=h.cho?'#7fe0ff':h.champ?PAL.y:'#e5484d';c.fillRect(x,y,Math.max(0,Math.round(12*h.hp/h.max)),2);
+  if(Math.random()<.35)FX.sparks.push({x:hp[0]+rand(-4,4),y:hp[1]+rand(-8,0),l:.4,c:Math.random()<.5?'#fff':'#c06bff'})}
+}
+function updWand(dt){for(const w of WAND){if(w.id!=='slime'&&w.id!=='skel'&&w.id!=='serpent')continue;if(w.w>0){w.w-=dt;continue}const dx=w.tx-w.x,dy=w.ty-w.y,d=Math.hypot(dx,dy),sp=w.id==='slime'?6:9;
+ if(d<1){w.w=rand(1,4);const p=wanderTarget(w.id);w.tx=p[0];w.ty=p[1]}else{w.x+=dx/d*sp*dt;w.y+=dy/d*sp*dt}}}
+
+/* ================= ORB ================= */
+const oc=$('orbc').getContext('2d');
+function drawOrb(t){
+ const c=oc;c.clearRect(0,0,32,32);
+ c.fillStyle='#2b2636';c.fillRect(9,25,14,3);c.fillRect(7,28,18,4);c.fillStyle='#4a4458';c.fillRect(9,25,12,2);c.fillRect(7,28,16,2);
+ const R=10,cx=16,cy=14,glow=.25+.15*Math.sin(t*3)+(S.buff.frenzy>0?.3:0);
+ c.fillStyle=`rgba(196,108,255,${glow})`;for(let y=0;y<32;y++)for(let x=0;x<32;x++){const d=Math.hypot(x+.5-cx,y+.5-cy);if(d>R&&d<R+2&&(x+y)%2===0)c.fillRect(x,y,1,1)}
+ for(let y=cy-R;y<=cy+R;y++)for(let x=cx-R;x<=cx+R;x++){const dx=x+.5-cx,dy=y+.5-cy,d=Math.hypot(dx,dy);if(d>R)continue;
+  const a=Math.atan2(dy,dx),sw=Math.sin(a*3+d*.6-t*2.5);let col=d>R-1.3?'#2a0f45':sw>.35?'#9a4fe0':sw>-.3?'#6a2ca8':'#4a1d7a';
+  if(S.buff.surge>0&&sw>.6)col='#ff7ad9';c.fillStyle=col;c.fillRect(x,y,1,1)}
+ c.fillStyle='#f0d8ff';c.fillRect(11,8,3,2);c.fillRect(10,10,2,1);c.fillStyle='#fff';c.fillRect(12,8,1,1);
+}
+
+/* ================= HEROES, THE CHOSEN ONE, FAIRIES ================= */
+function heroTier(d){let r=HTIER[0];for(const x of HTIER)if(d>=x[0])r=x;return r}
+const heroName=h=>h.cho?'The Chosen One':heroTier(h.d)[1];
+function spawnHero(){const d=S.heroLv,champ=d%10===9,hp=150*Math.pow(1.5,d)*(champ?4:1);S.hero={d,hp,max:hp,t:0,champ}}
+/* The Chosen One is sized to your army at the moment he is born (this reign's upgrades, not your Dark Arts),
+   then grows on his own: ×2.5 to ×3.8 (by realm) every time you beat him. Bane of Heroes is what lets you outgrow him. */
+const CHO_GS=[2.5,3,3.8,3.8];
+const choG=()=>CHO_GS[Math.min(M.realm,3)];
+function choBase(){return Math.max(1000,(.5*C.P+.5)*C.armyRun*32*(S.up.h3?1.3:1)*10)}
+function spawnChosen(){const k=S.cho.k,hp=S.cho.base*Math.pow(choG(),k);S.hero={cho:1,d:99,hp,max:hp,t:0,k}}
+function tapHero(){calc();const d=C.click*2+armyDps()*1.5;S.hero.hp-=d;if(S.hero.hp<=0)heroDefeated();return d}
+function heroDefeated(){
+ const h=S.hero,p=pathAt(h.t);
+ if(h.cho){
+  const g=Math.max(C.P*120,h.max*.6)*C.loot;earn(g);S.cho.wins++;S.cho.k++;M.st.chosen++;M.best[Math.min(M.realm,3)]=Math.max(M.best[Math.min(M.realm,3)]||0,S.cho.wins);
+  floatMap(p[0],p[1]-10,'+'+fmt(g),'gold');S.hero=null;S.cho.t=choInterval();
+  if(S.cho.wins>=R0().need&&M.realm<4){conquer();return}
+  toastLine(`The Chosen One fell! (${S.cho.wins}/${R0().need}) +${fmt(g)} malice, +2 essence when you seal. He’ll be back, stronger.`);return}
+ const g=Math.max(10,C.P*30,h.max*.6)*(h.champ?3:1)*C.loot;earn(g);M.st.slain++;if(h.champ)M.st.champs++;S.heroLv++;
+ floatMap(p[0],p[1]-10,'+'+fmt(g),'gold');
+ toastLine(`${heroName(h)}${h.champ?' (Champion)':''} defeated! +${fmt(g)} malice`);
+ S.hero=null;S.heroT=rand(35,60);
+}
+function heroReached(){
+ const h=S.hero;S.hero=null;
+ if(h.cho){S.cho.cracks++;S.cho.t=choInterval();
+  if(S.cho.cracks>=maxCracks()){forcedSeal();return}
+  toastLine(`The Chosen One struck your keep! Cracks: ${S.cho.cracks}/${maxCracks()}. At ${maxCracks()} you are sealed.`,1);return}
+ const steal=Math.min(S.malice*.08,C.P*90+5);S.malice=Math.max(0,S.malice-steal);M.st.reached++;S.heroLv=Math.max(0,S.heroLv-1);S.heroT=rand(35,60);
+ toastLine(`The ${heroName(h)} reached your keep, smashed your pots and took ${fmt(steal)} malice!`,1);
+}
+function catchFairy(){
+ const f=S.fairy,mult=(S.up.f2?2:1)*(1+.25*lv('lore'));S.fairy=null;M.st.fairies++;
+ const r=Math.random();
+ if(S.up.c3&&r<.12){S.buff.surge=10*mult;toastLine(`Fairy caught: DARK SURGE! Taps ×777 for ${Math.round(10*mult)}s. Tap the orb!`)}
+ else if(r<.55){S.buff.frenzy=60*mult;toastLine(`Fairy caught: FRENZY! Malice ×7 for ${Math.round(60*mult)}s.`)}
+ else{const g=Math.min(S.malice*.15,C.P*900)+13;earn(g);toastLine(`Fairy caught: LUCKY! +${fmt(g)} malice.`);floatMap(f.x,f.y-6,'+'+fmt(g),'gold')}
+}
+function tick(dt){
+ calc();
+ earn(C.Pf*dt);M.play+=dt;
+ for(const k in S.buff)if(S.buff[k]>0)S.buff[k]=Math.max(0,S.buff[k]-dt);
+ if(!M.flags.hero&&S.runTotal>=2000&&S.own.slime>=5){M.flags.hero=1;S.heroT=6}
+ if(!M.flags.fairy&&S.runTotal>=30000&&M.st.slain>=3){M.flags.fairy=1;S.fairyT=20}
+ // the Chosen One is born when this reign crosses the realm's prophecy line
+ if(!S.cho&&M.realm<4&&S.startRealm===M.realm&&S.runTotal>=R0().req){S.cho={k:0,base:choBase(),cracks:0,wins:0,t:60};say('chosen');toastLine('A prophecy is fulfilled. The Chosen One has been born, and he is coming for you.',1)}
+ if(S.cho&&!S.hero){S.cho.t-=dt;if(S.cho.t<=0)spawnChosen()}
+ if(M.flags.hero){
+  if(!S.hero){if(!(S.cho&&S.cho.t<25)){S.heroT-=dt;if(S.heroT<=0){spawnHero();if(!M.seen.hero)say('hero')}}}
+  else{S.hero.t+=dt/((S.hero.cho?32:22)*(S.up.h3?1.3:1));S.hero.hp-=armyDps()*dt;if(S.hero.hp<=0)heroDefeated();else if(S.hero.t>=1)heroReached()}
+ }else if(S.hero){S.hero.t+=dt/32;S.hero.hp-=armyDps()*dt;if(S.hero.hp<=0)heroDefeated();else if(S.hero.t>=1)heroReached()}
+ if(M.flags.fairy){
+  if(!S.fairy){S.fairyT-=dt*(S.up.f1?2:1)*(1+.25*lv('fairy'));if(S.fairyT<=0){const dir=Math.random()<.5?1:-1;S.fairy={x:dir>0?-4:196,dir,y0:rand(36,100),life:14,ph:Math.random()*6};S.fairyT=rand(70,150);if(!M.seen.fairy)say('fairy')}}
+  else{const f=S.fairy;f.life-=dt;f.x+=f.dir*15*dt;f.y=f.y0+Math.sin(M.play*2+f.ph)*12;if(f.life<=0||f.x<-8||f.x>200)S.fairy=null}
+ }
+}
+function buyN(b){return UI.mult||Math.max(1,maxAfford(b))}
+function maxAfford(b){const c0=b.cost*costMult()*Math.pow(1.15,S.own[b.id]);return Math.floor(Math.log(1+S.malice*.15/c0)/Math.log(1.15))}
+function buy(id){const b=B.find(x=>x.id===id),n=buyN(b),c=bulkCost(b,n);if(S.malice<c)return;S.malice-=c;S.own[id]+=n;if(!M.known[id]){M.known[id]=1;toastLine(`You summoned your first ${b.n}!`)}calc();syncWand();layoutStatics();renderStore(true)}
+function buyUp(id){const u=U.find(x=>x.id===id);if(!u||S.up[id]||S.malice<u.cost)return;S.malice-=u.cost;S.up[id]=1;UI.sel=null;calc();renderUps(true)}
+function checkAch(){for(const a of ACH)if(!M.ach[a.id]&&a.c()){M.ach[a.id]=1;toastLine(`★ Infamy: ${a.n} (+1% malice)`);if(!M.seen.inf)say('inf')}}
+/* Essence grows with the LOG of how far past the line you pushed, so it can't snowball. */
+function sealGain(){const Rm=R0();if(S.runTotal<Rm.req)return 0;return Math.floor((5+8*Math.log10(S.runTotal/Rm.req)+2*(S.cho?S.cho.wins:0))*(1+.5*Math.min(M.realm,3))*(1+.1*lv('siphon')))}
+function doSeal(){const g=sealGain();M.essence+=g;M.st.essence+=g;M.seals++;S=freshRun();calc();setRealm();UI.sealConfirm=0;UI.storeKey='';UI.upKey='';renderAll(true);return g}
+function seal(){if(S.runTotal<R0().req||sealGain()<1)return;doSeal();closeModal();say('reborn',true)}
+function forcedSeal(){const g=doSeal();openModal(`<h2>SEALED AWAY</h2><p>The Chosen One drove his sword into your keep, and the old seal closed around you.</p><p>A thousand years pass. You remember everything.</p><p style="color:var(--ess)">+${g} essence</p><p class="note">Spend essence on Dark Arts (✦ at the top), then rise again.</p><button class="pbtn go big" data-act="arts">DARK ARTS</button><button class="pbtn big" data-act="close">RISE AGAIN</button>`)}
+function conquer(){
+ const was=R0(),bonus=10*(M.realm+1);M.essence+=bonus;M.st.essence+=bonus;M.realm++;S.cho=null;S.hero=null;S.heroT=30;setRealm();UI.storeKey='';
+ if(M.realm>3){openModal(`<h2>LIGHTS OUT</h2><p>The Chosen One of the Heavens fell for the last time. Your Sun Snuffer came down, slowly, and the Sun went out with a small, sad <i>fft</i>.</p><p>There is no one left to stop you. There is no one left at all, really. It’s very quiet.</p><p style="color:var(--ess)">+${bonus} essence</p><p class="note">You have conquered everything. Malice ×3 forever. The game goes on; nothing will seal you again.</p><button class="pbtn go big" data-act="close">RULE THE DARK</button>`);return}
+ const nx=R0();
+ openModal(`<h2>${was.n.toUpperCase()} HAS FALLEN</h2><p>The Chosen One of ${was.title} lies defeated. The realm is yours.</p><p>Your view pulls back. Beyond the borders lies <b style="color:var(--gold);font-weight:400">${nx.title}</b>, and it has never heard of you.</p><p style="color:var(--ess)">+${bonus} essence</p><p class="note">Malice ×3 forever. New minions to summon. The prophecy of ${nx.n} will only be written after your next Sealing: in that reign, a new Chosen One is born at ${fmtL(nx.req)} malice.</p><button class="pbtn go big" data-act="close">ONWARD</button>`);
+}
+
+/* ================= DIALOGS (one-time introductions) ================= */
+const DLG={
+ intro:'You are the <b>Dark Lord</b>. Well... you will be. For now you’re a voice in a crumbling tower. <b>Tap the orb</b> to gather malice.',
+ store:'You have enough malice to summon a <b>Slime</b>. Minions make malice on their own, even while you’re away.',
+ up:'An <b>upgrade</b> is ready! Upgrades make your minions stronger. Tap the icon to see what it does.',
+ hero:'A <b>hero</b> has left the village! Your minions attack him as he walks the road. Tap him to curse him yourself. If he reaches your keep, he smashes pots and steals malice.',
+ fairy:'A <b>fairy</b>! Tap it before it flies away. Bottled fairies grant big bonuses.',
+ multi:'You can now summon minions <b>10 at a time</b>, or <b>MAX</b> to buy as many as you can afford.',
+ inf:'You earned an <b>infamy star</b>! Each one adds +1% malice forever. Tap ★ at the top to see them all.',
+ seal:'Your evil grows so great that a legend stirs. When this reign reaches <b>1 billion malice</b>, a prophecy will be fulfilled.',
+ chosen:'<b>The Chosen One</b> is born. He visits every couple of minutes and gets much stronger each time, whatever you do. Every time he reaches your keep, it cracks. <b>Three cracks and you are sealed away.</b> Beat him enough times in one reign and the realm is yours.',
+ reborn:'A thousand years pass. You return with <b>essence</b>. Spend it on <b>Dark Arts</b> (✦ at the top) to grow stronger each reign.',
+ migrate:'The rules of darkness have changed. Essence now comes in slowly and is spent on <b>Dark Arts</b>. Your old essence was converted. Tap <b>✦</b> to spend it.'
+};
+const dq=[];let dTyping=null;
+function say(k,force){if(M.seen[k]&&!force)return;M.seen[k]=1;dq.push(DLG[k]);if(dq.length===1)showDlg()}
+function showDlg(){const el=$('dlg');if(!dq.length){el.hidden=true;return}el.hidden=false;const html=dq[0],plain=html.replace(/<[^>]+>/g,'');let i=0;clearInterval(dTyping);
+ dTyping=setInterval(()=>{i+=2;if(i>=plain.length){clearInterval(dTyping);dTyping=null;el.innerHTML=html}else el.textContent=plain.slice(0,i)},16)}
+$('dlg').addEventListener('click',()=>{if(dTyping){clearInterval(dTyping);dTyping=null;$('dlg').innerHTML=dq[0];return}dq.shift();showDlg()});
+
+/* ================= UI ================= */
+const UI={mult:1,sel:null,storeKey:'',upKey:'',sealConfirm:0,wipe:0};
+let lastNews=0;
+function toastLine(t,bad){const el=$('ticker');el.style.opacity=0;setTimeout(()=>{el.textContent=t;el.style.color=bad?'#ff8a8a':'#f7d354';el.style.opacity=1},200);lastNews=performance.now()+4000}
+function news(){const el=$('ticker'),ok=NEWS.filter(n=>n[0]());if(!ok.length)return;const pool=Math.random()<.7?ok.slice(-5):ok;const n=pool[Math.floor(Math.random()*pool.length)];el.style.opacity=0;setTimeout(()=>{el.textContent=n[1];el.style.color='';el.style.opacity=1},300)}
+function floatAt(parent,x,y,text,cls){const f=document.createElement('div');f.className='float '+(cls||'');f.textContent=text;f.style.left=x+'px';f.style.top=y+'px';parent.appendChild(f);setTimeout(()=>f.remove(),1000)}
+function mapRect(){const r=mapc.getBoundingClientRect(),s=Math.min(r.width/MW,r.height/MH);return{r,s,ox:(r.width-MW*s)/2,oy:(r.height-MH*s)/2}}
+function floatMap(x,y,text,cls){const m=mapRect();if(!m.s)return;floatAt($('mapwrap'),m.ox+x*m.s-10,m.oy+y*m.s,text,cls)}
+function icon(canvas,name,over){const c=canvas.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,canvas.width,canvas.height);c.drawImage(sprite(name,over),(canvas.width-8)/2,(canvas.height-8)/2)}
+function storeRows(){const rows=[],lim=R0().unlock;for(let i=0;i<lim;i++){const b=B[i],known=M.known[b.id]||S.own[b.id]>0;
+ if(known){M.known[b.id]=1;rows.push({b,known:true})}else{if(i===0||S.own[B[i-1].id]>0||M.known[B[i-1].id])rows.push({b,known:false});break}}return rows}
+function renderStore(force){
+ const sec=$('storeSec');if(!M.flags.store){sec.hidden=true;$('store').innerHTML='';UI.storeKey='';return}sec.hidden=false;
+ const rows=storeRows(),key=rows.map(r=>r.b.id+r.known).join()+'|'+UI.mult;
+ if(force||key!==UI.storeKey){UI.storeKey=key;
+  $('store').innerHTML=rows.map(({b,known})=>known?`<button class="item" data-act="buy" data-arg="${b.id}" id="it-${b.id}"><canvas width="10" height="10"></canvas><div style="min-width:0"><div class="nm">${b.n}</div><div class="cs"></div><div class="sb"></div></div><div class="ow"></div></button>`
+   :`<button class="item unk" data-act="buy" data-arg="${b.id}" id="it-${b.id}"><canvas width="10" height="10"></canvas><div><div class="nm">???</div><div class="cs"></div><div class="sb">Summon one to discover what it is.</div></div><div class="ow"></div></button>`).join('');
+  rows.forEach(({b,known})=>icon($('it-'+b.id).querySelector('canvas'),b.id,known?null:SIL));
+ }
+ for(const {b,known} of rows){const el=$('it-'+b.id);if(!el)continue;const n=buyN(b),c=bulkCost(b,n),ok=S.malice>=c;
+  el.querySelector('.cs').textContent=`${fmt(c)} malice${n>1||UI.mult!==1?` (×${n})`:''}`;el.querySelector('.cs').classList.toggle('no',!ok);
+  el.classList.toggle('no',!ok);if(known){el.querySelector('.ow').textContent=S.own[b.id]||'';el.querySelector('.sb').textContent=S.own[b.id]?`${fmt(C.per[b.id])}/s each · ${fmt(C.per[b.id]*S.own[b.id])}/s total`:b.d}}
+ const showM=Object.values(S.own).some(n=>n>=15)||M.seals>0;
+ if(showM&&!M.seen.multi)say('multi');
+ const mel=$('mult');mel.hidden=!showM;if(showM&&!mel.dataset.k){mel.dataset.k=1;mel.innerHTML=[1,10,0].map(n=>`<button class="pbtn" data-act="mult" data-arg="${n}">${n?'×'+n:'MAX'}</button>`).join('')}
+ mel.querySelectorAll('.pbtn').forEach(b=>b.classList.toggle('on',+b.dataset.arg===UI.mult));
+}
+function availUps(){const lim=new Set(B.slice(0,R0().unlock).map(b=>b.id));return U.filter(u=>{if(S.up[u.id]||(u.b&&!lim.has(u.b))||!u.req())return false;if(S.seenUp[u.id])return true;if(S.malice>=u.cost*.4||S.runTotal>=u.cost){S.seenUp[u.id]=1;return true}return false}).sort((a,b)=>a.cost-b.cost)}
+const TIERCOL=['#b07a3a','#c9c9d6','#f7d354','#c46cff','#e5484d'];
+function renderUps(force){
+ const list=availUps(),sec=$('upSec');
+ if(!list.length){sec.hidden=true;UI.upKey='';return}
+ sec.hidden=false;if(!M.seen.up)say('up');
+ const key=list.map(u=>u.id).join();
+ if(force||key!==UI.upKey){UI.upKey=key;if(UI.sel&&!list.find(u=>u.id===UI.sel))UI.sel=null;
+  $('ups').innerHTML=list.map(u=>`<button class="utile" data-act="usel" data-arg="${u.id}" id="u-${u.id}" aria-label="${u.n}"><canvas width="12" height="12"></canvas></button>`).join('');
+  list.forEach(u=>{const cv=$('u-'+u.id).querySelector('canvas'),c=cv.getContext('2d');c.fillStyle=u.tier!=null?TIERCOL[u.tier]:'#3a2f55';c.fillRect(0,0,12,12);c.fillStyle='#0b0912';c.fillRect(1,1,10,10);c.drawImage(sprite(u.ic),2,2)});
+  $('uinfo').dataset.k='';
+ }
+ list.forEach(u=>{const el=$('u-'+u.id);el.classList.toggle('no',S.malice<u.cost);el.classList.toggle('sel',UI.sel===u.id)});
+ const info=$('uinfo'),u=list.find(x=>x.id===UI.sel);
+ if(!u){if(info.dataset.k!=='none'){info.dataset.k='none';info.innerHTML='<p class="note" style="margin:6px 0 0">Tap an icon to see the upgrade.</p>'}return}
+ if(info.dataset.k!==u.id){info.dataset.k=u.id;info.innerHTML=`<div class="uinfo"><b>${u.n}</b><span>${u.d}</span><span class="cs" style="color:var(--mal)">${fmt(u.cost)} malice</span><button class="pbtn go big" data-act="ubuy" data-arg="${u.id}" id="ubuyBtn">BUY</button></div>`}
+ $('ubuyBtn').disabled=S.malice<u.cost;
+}
+function meter(n,need,best){let h='<div class="meter">';for(let i=0;i<need;i++)h+=`<i class="${i<n?'on':i<best?'best':''}"></i>`;return h+'</div>'}
+function renderCho(){
+ const sec=$('choSec');if(!S.cho){sec.hidden=true;sec.dataset.k='';return}sec.hidden=false;
+ const c=S.cho,Rm=R0(),best=M.best[Math.min(M.realm,3)]||0,coming=S.hero&&S.hero.cho;
+ const key=[c.wins,c.cracks,c.k,coming?1:0,Math.ceil(c.t/5),best,fmt(c.base*Math.pow(choG(),c.k))].join();if(sec.dataset.k===key)return;sec.dataset.k=key;
+ sec.innerHTML=`<div class="box gold"><h2>THE CHOSEN ONE</h2>
+ <p>Defeat him <b style="color:var(--gold);font-weight:400">${Rm.need} times in this reign</b> to conquer ${Rm.title}.</p>
+ ${meter(c.wins,Rm.need,best)}<p class="note">This reign: ${c.wins}/${Rm.need} · best ever: ${best}/${Rm.need}</p>
+ <p>${coming?'<b style="color:var(--gold);font-weight:400">He is on the road now! Tap him!</b>':`Next visit in ${ft(c.t)}.`} His strength: ${fmt(c.base*Math.pow(choG(),c.k))} HP (×${choG()} each time you beat him).</p>
+ <p class="cracks">Keep cracks: ${'■'.repeat(c.cracks)}${'□'.repeat(maxCracks()-c.cracks)} ${c.cracks}/${maxCracks()}</p></div>`;
+}
+function renderSeal(){
+ const sec=$('sealSec');if(!M.flags.seal){sec.hidden=true;return}sec.hidden=false;
+ const Rm=R0(),g=sealGain(),ready=S.runTotal>=Rm.req&&g>=1,key=[ready,g,M.essence,M.realm,UI.sealConfirm,Math.floor(Math.log10(S.runTotal+1)*4)].join();
+ if(sec.dataset.k===key)return;sec.dataset.k=key;
+ sec.innerHTML=`<div class="box"><h2>THE SEALING</h2><p>Every villain is sealed away in the end. Let it happen early and return in a thousand years with <b style="color:var(--ess);font-weight:400">essence</b> to spend on Dark Arts. You keep infamy stars, Dark Arts and conquered realms. You lose minions, upgrades and malice.</p>
+ <p class="note">${M.realm>3?'Nothing can seal you now, but you may choose to.':`Prophecy line for ${Rm.n}: ${fmtL(Rm.req)} malice in one reign. This reign: ${fmtL(S.runTotal)}.`}</p>
+ <p class="note">Essence if sealed now: ${g}. Every 10× past the line adds about 8, every Chosen One defeat adds 2.</p>
+ ${ready?(UI.sealConfirm?`<button class="pbtn go big" data-act="seal2">YES, SEAL ME AWAY</button><button class="pbtn big" data-act="sealx">NOT YET</button>`:`<button class="pbtn go big" data-act="seal">BE SEALED AWAY (+${g} <span class="sym">✦</span>)</button>`):''}</div>`;
+}
+function renderTop(){
+ $('mal').textContent=fmtL(S.malice);
+ const ps=$('ps');if(C.P>0||S.own.slime>0){ps.hidden=false;ps.textContent=`per second: ${C.Pf<100?C.Pf.toFixed(1):fmtL(C.Pf)}`}
+ const ex=[];
+ if(S.buff.frenzy>0)ex.push(`<span class="pill">FRENZY ×7 ${Math.ceil(S.buff.frenzy)}s</span>`);
+ if(S.buff.surge>0)ex.push(`<span class="pill s">SURGE ${Math.ceil(S.buff.surge)}s</span>`);
+ if(S.hero){ex.push(`<span class="${S.hero.cho?'cho':''}">⚔ ${heroName(S.hero)}${S.hero.champ?' (Champion)':''} on the road: ${Math.max(0,Math.ceil(S.hero.hp/S.hero.max*100))}% HP</span>`)}
+ else if(M.flags.hero)ex.push(`<span>⚔ heroes defeated: ${M.st.slain}</span>`);
+ const h=ex.join('');const el=$('extra');if(el.dataset.h!==h){el.dataset.h=h;el.innerHTML=h}
+ const ib=$('infBtn'),n=achCount();ib.hidden=!n;const ih=`<span class="sym">★</span>${n}`;if(ib.innerHTML!==ih)ib.innerHTML=ih;
+ const eb=$('essBtn');eb.hidden=!(M.seals>0||M.essence>0);const eh=`<span class="sym">✦</span>${fmt(M.essence)}`;if(eb.innerHTML!==eh)eb.innerHTML=eh;
+ $('realmLbl').textContent=M.realm>0?(M.realm>3?'· the dark':'· '+R0().n):'';
+ $('hint').hidden=M.st.taps>=3||M.flags.store;
+}
+function renderAll(force){
+ if(!M.flags.store&&(S.malice>=10||Object.values(S.own).some(n=>n>0))){M.flags.store=1;say('store')}
+ if(!M.flags.seal&&S.runTotal>=1e8){M.flags.seal=1;say('seal')}
+ renderTop();renderCho();renderUps(force);renderStore(force);renderSeal();
+}
+
+/* ================= MODALS ================= */
+function openModal(h){$('mbox').innerHTML=h;$('modal').hidden=false}
+function closeModal(){$('modal').hidden=true}
+function infHTML(){return `<h2>INFAMY <span class="sym">★</span> ${achCount()} / ${ACH.length}</h2><p class="note">Each star: +1% malice, forever.</p>`+ACH.map(a=>`<div class="ach ${M.ach[a.id]?'':'off'}"><span class="st">★</span><span><b style="font-weight:400;color:${M.ach[a.id]?'var(--text)':'inherit'}">${a.n}</b><br><span class="note">${a.d}</span></span></div>`).join('')+'<button class="pbtn go big" data-act="close">CLOSE</button>'}
+function artsHTML(){
+ let h=`<h2>DARK ARTS</h2><p>Essence: <b style="color:var(--ess);font-weight:400">✦ ${fmt(M.essence)}</b></p><p class="note">Every level costs more than the last. Arts last forever, through every Sealing.</p>`;
+ let grp='';
+ for(const a of ARTS){if(a.g!==grp){grp=a.g;h+=`<h3>${grp.toUpperCase()}</h3>`}
+  const l=lv(a.id),maxed=l>=a.max,c=artCost(a);
+  h+=`<div class="art"><div class="top"><b>${a.n}</b><span class="lv">${l}/${a.max}</span></div><span>${a.d}</span>${maxed?'<span class="note">Mastered.</span>':`<button class="pbtn ${M.essence>=c?'go':''}" data-act="art" data-arg="${a.id}" ${M.essence<c?'disabled':''}>LEARN · <span class="sym">✦</span>${fmt(c)}</button>`}</div>`}
+ return h+'<button class="pbtn go big" data-act="close">CLOSE</button>';
+}
+function optHTML(){return `<h2>OPTIONS</h2><p class="note">The game saves in this browser every few seconds.</p>
+ <p class="note">All-time malice: ${fmtL(M.allTime)} · taps: ${fmtL(M.st.taps)} · heroes defeated: ${M.st.slain} · Chosen One defeats: ${M.st.chosen} · fairies: ${M.st.fairies} · seals: ${M.seals} · essence earned: ${fmt(M.st.essence)} · realms conquered: ${Math.min(M.realm,4)} · played ${ft(M.play)}</p>
+ <button class="pbtn big" data-act="save">SAVE NOW</button><button class="pbtn big" data-act="export">COPY SAVE CODE</button>
+ <textarea id="imp" placeholder="Paste a save code here"></textarea><button class="pbtn big" data-act="import">LOAD SAVE CODE</button>
+ <button class="pbtn big" data-act="${UI.wipe?'wipe2':'wipe'}" style="${UI.wipe?'background:#e5484d;color:#000':''}">${UI.wipe?'TAP AGAIN TO ERASE ALL':'START OVER'}</button>
+ <button class="pbtn go big" data-act="close">CLOSE</button>`}
+
+/* ================= INPUT ================= */
+$('orb').addEventListener('pointerdown',e=>{
+ e.preventDefault();calc();earn(C.click);M.st.taps++;
+ const o=$('orb');o.classList.add('bump');setTimeout(()=>o.classList.remove('bump'),70);
+ const r=$('core').getBoundingClientRect();floatAt($('core'),e.clientX-r.left-8+rand(-10,10),e.clientY-r.top-20,'+'+fmt(C.click));
+ renderTop();
+});
+mapc.addEventListener('pointerdown',e=>{
+ const m=mapRect(),x=(e.clientX-m.r.left-m.ox)/m.s,y=(e.clientY-m.r.top-m.oy)/m.s;
+ if(S.fairy&&Math.hypot(x-S.fairy.x,y-S.fairy.y)<12){catchFairy();return}
+ if(S.hero){const p=pathAt(S.hero.t);if(Math.hypot(x-p[0],y-(p[1]-4))<12){const d=tapHero();floatMap(p[0]+rand(-4,4),p[1]-14,'-'+fmt(d),'dmg');for(let i=0;i<4;i++)FX.sparks.push({x:p[0]+rand(-3,3),y:p[1]-4+rand(-3,3),l:.5,c:'#c06bff'})}}
+});
+document.addEventListener('click',e=>{
+ const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act,arg=b.dataset.arg;
+ switch(a){
+  case 'buy':buy(arg);break;
+  case 'mult':UI.mult=+arg;break;
+  case 'usel':UI.sel=UI.sel===arg?null:arg;break;
+  case 'ubuy':buyUp(arg);break;
+  case 'seal':UI.sealConfirm=1;break;
+  case 'sealx':UI.sealConfirm=0;break;
+  case 'seal2':seal();break;
+  case 'arts':openModal(artsHTML());break;
+  case 'art':{const x=ARTS.find(q=>q.id===arg),c=artCost(x);if(lv(arg)<x.max&&M.essence>=c){M.essence-=c;M.arts[arg]=lv(arg)+1;calc()}const sc=$('mbox').scrollTop;openModal(artsHTML());$('mbox').scrollTop=sc;break}
+  case 'inf':openModal(infHTML());break;
+  case 'opt':UI.wipe=0;openModal(optHTML());break;
+  case 'close':closeModal();break;
+  case 'save':save();toastLine('Saved.');break;
+  case 'export':{const code=btoa(unescape(encodeURIComponent(JSON.stringify({S,M}))));const ta=$('imp');ta.value=code;ta.select();if(navigator.clipboard)navigator.clipboard.writeText(code).then(()=>toastLine('Save code copied.'),()=>toastLine('Copy the code from the box.'));break}
+  case 'import':{try{const d=JSON.parse(decodeURIComponent(escape(atob($('imp').value.trim()))));if(!adopt(d))throw 0;reset();closeModal();toastLine('Save loaded.')}catch(err){toastLine('That save code didn’t work.',1)}break}
+  case 'wipe':UI.wipe=1;openModal(optHTML());break;
+  case 'wipe2':M=freshMeta();S=freshRun();reset();closeModal();say('intro');break;
+ }
+ renderAll(true);
+});
+$('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
+function reset(){UI.storeKey='';UI.upKey='';UI.mult=1;UI.sel=null;$('store').innerHTML='';$('mult').dataset.k='';$('mult').innerHTML='';$('choSec').dataset.k='';$('sealSec').dataset.k='';calc();setRealm()}
+
+/* ================= SAVE ================= */
+const KEY='dreadkeep-v1';
+function save(){try{localStorage.setItem(KEY,JSON.stringify({S,M,t:Date.now()}))}catch(e){}}
+function fill(def,obj){for(const k in def){if(obj[k]===undefined)obj[k]=def[k];else if(def[k]&&typeof def[k]==='object'&&!Array.isArray(def[k])&&obj[k]&&typeof obj[k]==='object')fill(def[k],obj[k])}return obj}
+function adopt(d){
+ if(!d||!d.M)return false;
+ if(d.M.v==='dk2'){M=fill(freshMeta(),d.M);S=fill(freshRun(),d.S);return true}
+ if(d.M.v==='dk1'){ // old rules: convert runaway essence into the new, slower currency
+  const old=d.M;M=fill(freshMeta(),{allTime:old.allTime,seals:old.seals||0,ach:old.ach||{},known:old.known||{},seen:old.seen||{},st:old.st||{},flags:old.flags||{},play:old.play||0});
+  M.essence=5+10*(old.seals||0);S=fill(freshRun(),d.S||{});if(M.seals>0)M.seen.migrate=0;return true}
+ return false;
+}
+function load(){let d=null;try{d=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){}
+ if(adopt(d))return d.t;M=freshMeta();S=freshRun();return null}
+
+/* ================= BOOT ================= */
+let started=false;
+function start(data){
+ if(started)return;started=true;
+ let t=null;
+ if(data&&data.M&&adopt(data)){}else t=load();
+ calc();setRealm();
+ if(!M.seen.intro)say('intro');
+ if(M.seals>0&&M.seen.migrate===0){M.seen.migrate=undefined;say('migrate')}
+ if(t){const el=(Date.now()-t)/1000;if(el>60&&C.P>0){const g=C.P*Math.min(el,86400)*(.5+.1*lv('patient'));earn(g);openModal(`<h2>WHILE YOU SLEPT</h2><p>${ft(Math.min(el,86400))} passed. Your minions gathered <b style="color:var(--mal);font-weight:400">${fmtL(g)}</b> malice.</p><p class="note">Minions work at ${Math.round((.5+.1*lv('patient'))*100)}% speed while you’re away. Heroes, fairies and the Chosen One wait for you to come back.</p><button class="pbtn go big" data-act="close">BACK TO EVIL</button>`)}}
+ renderAll(true);
+ let last=performance.now();
+ setInterval(()=>{const now=performance.now();let dt=Math.min(3600,(now-last)/1000);last=now;while(dt>0){const d=Math.min(.25,dt);tick(d);dt-=d}},100);
+ setInterval(()=>renderAll(false),150);
+ setInterval(()=>{checkAch();syncWand();layoutStatics()},800);
+ setInterval(()=>{if(performance.now()>lastNews)news()},9000);
+ setInterval(save,6000);
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)save()});
+ window.addEventListener('pagehide',save);
+ try{window.claude?.hot?.snapshot?.(()=>({S,M}))}catch(e){}
+ let lf=performance.now();
+ const frame=now=>{const dt=Math.min(.1,(now-lf)/1000);lf=now;updWand(dt);drawMap(now);drawOrb(now/1000);requestAnimationFrame(frame)};
+ requestAnimationFrame(frame);
+}
+const hot=window.claude?.hot;
+if(hot&&hot.ready)hot.ready(start);else start(hot?.data??{});
+</script>
+</body>
+</html>
+
+</body></html>
