@@ -232,7 +232,7 @@ const ARTS=[
  {g:'Heroes',id:'bane',n:'Bane of Heroes',d:'You and your minions hit heroes 1.5× harder per level.',b:2,x:1.5,max:25},
  {g:'Heroes',id:'bounty',n:'Hero Bounties',d:'Defeated heroes drop +50% malice per level.',b:2,x:1.6,max:5},
  {g:'Heroes',id:'omens',n:'Delaying Omens',d:'The Chosen One waits 20% longer between visits per level.',b:4,x:1.8,max:5},
- {g:'Heroes',id:'walls',n:'Thick Walls',d:'Your keep survives one more crack from the Chosen One per level.',b:8,x:2.5,max:3},
+ {g:'Heroes',id:'walls',n:'Thick Walls',d:'+50 keep HP, and your keep survives one more crack from the Chosen One, per level.',b:8,x:2.5,max:3},
  {g:'Fortune',id:'fairy',n:'Fairy Lure',d:'Fairies show up 25% more often per level.',b:2,x:1.6,max:5},
  {g:'Fortune',id:'lore',n:'Fairy Lore',d:'Fairy effects last 25% longer per level.',b:3,x:1.6,max:5},
  {g:'Fortune',id:'patient',n:'Patient Evil',d:'+10% malice while you’re away per level (starts at 50%).',b:2,x:1.5,max:5},
@@ -294,7 +294,7 @@ function freshMeta(){return{v:'dk2',allTime:0,essence:0,seals:0,realm:0,arts:{},
  st:{taps:0,slain:0,reached:0,fairies:0,champs:0,chosen:0,essence:0},flags:{},play:0}}
 function freshRun(){
  const own={};B.forEach(b=>own[b.id]=0);
- const r={malice:0,runTotal:0,own,up:{},seenUp:{},heroLv:0,hero:null,heroT:12,fairy:null,fairyT:40,buff:{frenzy:0,surge:0},cho:null,startRealm:M?M.realm:0};
+ const r={malice:0,runTotal:0,own,up:{},seenUp:{},heroLv:0,heroes:[],heroT:12,fairy:null,fairyT:40,buff:{frenzy:0,surge:0},cho:null,startRealm:M?M.realm:0,keepHp:M?keepMax():100};
  if(M){const L=lv('legions');B.slice(0,Math.min(L,R0().unlock)).forEach(b=>r.own[b.id]=10);const h=lv('hoard');if(h)r.malice=1000*Math.pow(10,h-1)}
  return r;
 }
@@ -308,8 +308,8 @@ function calc(){
  for(const b of B){let m=1;for(let i=0;i<5;i++)if(S.up[b.id+i])m*=2;per[b.id]=b.p*m*g;P+=per[b.id]*S.own[b.id]}
  let c2=0,pct=0,army=1,loot=1;
  for(const u of U)if(S.up[u.id]){if(u.click2)c2++;if(u.pct)pct+=u.pct;if(u.army)army*=u.army;if(u.loot)loot*=u.loot}
- const Pf=P*(S.buff.frenzy>0?7:1);
- const click=(Math.pow(2,c2+lv('touch'))+Pf*pct)*(S.buff.surge>0?777:1);
+ const Pf=P*(S.buff.frenzy>0?5:1);
+ const click=(Math.pow(2,c2+lv('touch'))+Pf*pct)*(S.buff.surge>0?10:1);
  C={P,Pf,per,click,armyRun:army,army:army*Math.pow(1.5,lv('bane')),loot:loot*(1+.5*lv('bounty'))};
 }
 const armyDps=()=>(.5*C.Pf+.5)*C.army;
@@ -522,14 +522,15 @@ function drawMap(now){
  for(const w of WAND)if(w.id==='portal'){const P=[[132,40],[184,56],[118,44],[150,70],[100,30],[176,88]][w.i]||[120,60];c.save();c.translate(P[0]+4,P[1]+4);c.rotate(Math.floor(t*6)%4*Math.PI/2);drawUnit(c,'portal','portal',lvlOf('portal',w.i),-4,-4,t,w.ph);c.restore()}
  const ents=[];
  for(const w of WAND)if(w.id==='slime'||w.id==='skel'||w.id==='serpent')ents.push({y:w.y,d:()=>drawUnit(c,w.id==='serpent'?'serpent':w.id==='slime'?(fr&&w.w<=0?'slime2':'slime'):(fr&&w.w<=0?'skel2':'skel'),w.id,lvlOf(w.id,w.i),Math.round(w.x-4),Math.round(w.y-8),t,w.ph)});
- let hp=null;
- if(S.hero){hp=pathAt(S.hero.t);const h=S.hero;let over;
+ const HP=[];
+ S.heroes.forEach((h,hi)=>{const hp=heroPos(h,hi);HP.push([h,hp]);let over;
   if(h.cho)over={u:'#f7d354',h:'#f6f1e4',w:'#7fe0ff'};else{over={u:heroTier(h.d)[2]};if(h.d<4)over.w='#8c5a2c';if(m.kind==='heavens')over.h='#ffd84a'}
   ents.push({y:hp[1],d:()=>{const x=Math.round(hp[0]-4),y=Math.round(hp[1]-8);
    if(h.cho){c.fillStyle=`rgba(255,230,120,${.3+.2*Math.sin(t*6)})`;c.beginPath();c.arc(hp[0],hp[1]-4,8,0,7);c.fill()}
-   if(m.kind!=='kingdom'&&(m.tiles[Math.min(TH-1,hp[1]>>3)][Math.min(TW-1,hp[0]>>3)]||{}).t==='sr'){c.fillStyle='#8c5a2c';c.fillRect(x-1,y+6,10,2);c.fillStyle='#5e3a1a';c.fillRect(x,y+8,8,1)}
+   if(h.atKeep&&Math.sin(t*14+hi)>.6){c.fillStyle='#ff5f5f';c.fillRect(x+3,y-3,2,2);c.fillRect(x-2,y+2,1,1)}
+   if(m.kind!=='kingdom'&&!h.atKeep&&(m.tiles[Math.min(TH-1,hp[1]>>3)][Math.min(TW-1,hp[0]>>3)]||{}).t==='sr'){c.fillStyle='#8c5a2c';c.fillRect(x-1,y+6,10,2);c.fillStyle='#5e3a1a';c.fillRect(x,y+8,8,1)}
    if(h.champ||h.cho){c.fillStyle=PAL.y;c.fillRect(x+2,y-2,1,1);c.fillRect(x+4,y-2,1,1);c.fillRect(x+6,y-2,1,1);c.fillRect(x+2,y-1,5,1)}
-   c.drawImage(sprite(fr?'hero2':'hero',over),x,y)}})}
+   c.drawImage(sprite(fr?'hero2':'hero',over),x,y)}})});
  ents.sort((a,b)=>a.y-b.y).forEach(e=>e.d());
  for(const w of WAND){
   if(w.id==='bat'){const x=m.GATE[0]-30+Math.cos(t*.7+w.ph)*Math.min(R*6,80)*(.4+.15*w.i),y=50+Math.sin(t*1.3+w.ph*2)*Math.min(R*3,40);drawUnit(c,fr?'bat2':'bat','bat',lvlOf('bat',w.i),Math.round(x),Math.round(y),t,w.ph)}
@@ -542,10 +543,11 @@ function drawMap(now){
   if(Math.random()<.5)FX.sparks.push({x:x+rand(-2,2),y:y+rand(-2,2),l:.6,c:'#ffc0f0'})}
  if(S.own.eclipse>0&&m.kind!=='heavens'){c.fillStyle='rgba(20,0,40,.22)';c.fillRect(0,0,MW,MH);drawUnit(c,'eclipse','eclipse',lvlOf('eclipse',0),6,4,t,0)}
  if(S.buff.frenzy>0){c.fillStyle=`rgba(255,200,60,${.08+.05*Math.sin(t*8)})`;c.fillRect(0,0,MW,MH)}
+ if(S.heroOn&&S.keepHp<keepMax()-.5){const g=m.GATE,w=24,x=g[0]-12,y=Math.max(1,g[1]-30),f=Math.max(0,S.keepHp/keepMax());c.fillStyle='#100c18';c.fillRect(x-1,y-1,w+2,5);c.fillStyle='#3a1a20';c.fillRect(x,y,w,3);c.fillStyle=f>.5?'#6fd35a':f>.25?'#f7d354':'#e5484d';c.fillRect(x,y,Math.round(w*f),3)}
  if(S.cho&&S.cho.cracks>0){c.strokeStyle='#e5484d';c.lineWidth=1;const g=m.GATE;for(let i=0;i<S.cho.cracks;i++){c.beginPath();c.moveTo(g[0]-6+i*4,g[1]-16);c.lineTo(g[0]-4+i*4,g[1]-10);c.lineTo(g[0]-7+i*4,g[1]-5);c.stroke()}}
  FX.sparks=FX.sparks.filter(s=>(s.l-=1/60)>0);for(const s of FX.sparks){c.fillStyle=s.c;c.globalAlpha=Math.min(1,s.l*2);c.fillRect(Math.round(s.x),Math.round(s.y),1,1);c.globalAlpha=1}
- if(S.hero&&hp){const h=S.hero,x=Math.round(hp[0]-6),y=Math.round(hp[1]-12);c.fillStyle='#100c18';c.fillRect(x-1,y-1,14,4);c.fillStyle='#5a1a20';c.fillRect(x,y,12,2);c.fillStyle=h.cho?'#7fe0ff':h.champ?PAL.y:'#e5484d';c.fillRect(x,y,Math.max(0,Math.round(12*h.hp/h.max)),2);
-  if(Math.random()<.35)FX.sparks.push({x:hp[0]+rand(-4,4),y:hp[1]+rand(-8,0),l:.4,c:Math.random()<.5?'#fff':'#c06bff'})}
+ for(const [h,hp] of HP){const x=Math.round(hp[0]-6),y=Math.round(hp[1]-12);c.fillStyle='#100c18';c.fillRect(x-1,y-1,14,4);c.fillStyle='#5a1a20';c.fillRect(x,y,12,2);c.fillStyle=h.cho?'#7fe0ff':h.champ?PAL.y:'#e5484d';c.fillRect(x,y,Math.max(0,Math.round(12*h.hp/h.max)),2);
+  if(h===(choOnRoad()||frontHero())&&Math.random()<.35)FX.sparks.push({x:hp[0]+rand(-4,4),y:hp[1]+rand(-8,0),l:.4,c:Math.random()<.5?'#fff':'#c06bff'})}
 }
 function updWand(dt){for(const w of WAND){if(w.id!=='slime'&&w.id!=='skel'&&w.id!=='serpent')continue;if(w.w>0){w.w-=dt;continue}const dx=w.tx-w.x,dy=w.ty-w.y,d=Math.hypot(dx,dy),sp=w.id==='slime'?6:9;
  if(d<1){w.w=rand(1,4);const p=wanderTarget(w.id);w.tx=p[0];w.ty=p[1]}else{w.x+=dx/d*sp*dt;w.y+=dy/d*sp*dt}}}
@@ -566,56 +568,74 @@ function drawOrb(t){
 /* ================= HEROES, THE CHOSEN ONE, FAIRIES ================= */
 function heroTier(d){let r=HTIER[0];for(const x of HTIER)if(d>=x[0])r=x;return r}
 const heroName=h=>h.cho?'The Chosen One':heroTier(h.d)[1];
-function spawnHero(){const d=S.heroLv,champ=d%10===9,hp=150*Math.pow(1.5,d)*(champ?4:1);S.hero={d,hp,max:hp,t:0,champ}}
+/* Heroes: several can be on the road at once. Your army focuses the Chosen One if he's out, otherwise whoever is closest to the keep.
+   A hero who reaches the keep doesn't leave: he besieges it, draining malice every second until he is killed. */
+/* A hero's HP is sized to your income (what your base army could deal on his walk), times a threat level that rises 6% with every hero you beat.
+   Army upgrades, Bane of Heroes and tapping are what keep you ahead. */
+function spawnHero(){const d=S.heroLv,champ=d%10===9,hp=Math.max(40,(.5*C.P+.5)*22*.1*Math.pow(1.06,d))*(champ?3:1);S.heroes.push({d,hp,max:hp,t:0,champ})}
 /* The Chosen One is sized to your army at the moment he is born (this reign's upgrades, not your Dark Arts),
    then grows on his own: ×2.5 to ×3.8 (by realm) every time you beat him. Bane of Heroes is what lets you outgrow him. */
 const CHO_GS=[2.5,3,3.8,3.8];
 const choG=()=>CHO_GS[Math.min(M.realm,3)];
 function choBase(){return Math.max(1000,(.5*C.P+.5)*C.armyRun*32*(S.up.h3?1.3:1)*10)}
-function spawnChosen(){const k=S.cho.k,hp=S.cho.base*Math.pow(choG(),k);S.hero={cho:1,d:99,hp,max:hp,t:0,k}}
-function tapHero(){calc();const d=C.click*2+armyDps()*1.5;S.hero.hp-=d;if(S.hero.hp<=0)heroDefeated();return d}
-function heroDefeated(){
- const h=S.hero,p=pathAt(h.t);
+function spawnChosen(){const k=S.cho.k,hp=S.cho.base*Math.pow(choG(),k);S.heroes.push({cho:1,d:99,hp,max:hp,t:0,k})}
+const choOnRoad=()=>S.heroes.find(h=>h.cho);
+function frontHero(){let f=null;for(const h of S.heroes)if(!f||h.t>f.t)f=h;return f}
+function heroPos(h,i){if(h.atKeep){const g=MP.GATE,n=S.heroes.filter(x=>x.atKeep).indexOf(h);return[g[0]-9+(n%4)*6+Math.sin(performance.now()/90+i)*1,g[1]+3+Math.floor(n/4)*5]}return pathAt(h.t)}
+function tapHero(h){calc();const d=C.click*2+armyDps()*1.5;h.hp-=d;if(h.hp<=0)heroDefeated(h);return d}
+/* Your keep has HP. Heroes standing at it hit it every second; tougher heroes hit harder. It slowly repairs when nobody is attacking. */
+const keepMax=()=>100+50*lv('walls');
+const HDPS=[2,4,8,12,20];
+function heroHit(h){let i=0;HTIER.forEach((x,j)=>{if(h.d>=x[0])i=j});return HDPS[i]*(h.champ?2:1)}
+const siegeDps=()=>S.heroes.reduce((a,h)=>a+(h.atKeep?heroHit(h):0),0);
+function heroDefeated(h){
+ const i=S.heroes.indexOf(h);if(i<0)return;S.heroes.splice(i,1);const p=heroPos(h,i);
  if(h.cho){
   const g=Math.max(C.P*120,h.max*.6)*C.loot;earn(g);S.cho.wins++;S.cho.k++;M.st.chosen++;M.best[Math.min(M.realm,3)]=Math.max(M.best[Math.min(M.realm,3)]||0,S.cho.wins);
-  floatMap(p[0],p[1]-10,'+'+fmt(g),'gold');S.hero=null;S.cho.t=choInterval();
+  floatMap(p[0],p[1]-10,'+'+fmt(g),'gold');S.cho.t=choInterval();
   if(S.cho.wins>=R0().need&&M.realm<4){conquer();return}
   toastLine(`The Chosen One fell! (${S.cho.wins}/${R0().need}) +${fmt(g)} malice, +2 essence when you seal. He’ll be back, stronger.`);return}
- const g=Math.max(10,C.P*30,h.max*.6)*(h.champ?3:1)*C.loot;earn(g);M.st.slain++;if(h.champ)M.st.champs++;S.heroLv++;
+ const g=Math.max(15,C.P*10)*(h.champ?3:1)*C.loot;earn(g);M.st.slain++;if(h.champ)M.st.champs++;S.heroLv++;
  floatMap(p[0],p[1]-10,'+'+fmt(g),'gold');
  toastLine(`${heroName(h)}${h.champ?' (Champion)':''} defeated! +${fmt(g)} malice`);
- S.hero=null;S.heroT=rand(35,60);
 }
-function heroReached(){
- const h=S.hero;S.hero=null;
- if(h.cho){S.cho.cracks++;S.cho.t=choInterval();
+function heroReached(h){
+ if(h.cho){S.heroes.splice(S.heroes.indexOf(h),1);S.cho.cracks++;S.cho.t=choInterval();
   if(S.cho.cracks>=maxCracks()){forcedSeal();return}
   toastLine(`The Chosen One struck your keep! Cracks: ${S.cho.cracks}/${maxCracks()}. At ${maxCracks()} you are sealed.`,1);return}
- const steal=Math.min(S.malice*.08,C.P*90+5);S.malice=Math.max(0,S.malice-steal);M.st.reached++;S.heroLv=Math.max(0,S.heroLv-1);S.heroT=rand(35,60);
- toastLine(`The ${heroName(h)} reached your keep, smashed your pots and took ${fmt(steal)} malice!`,1);
+ h.atKeep=1;h.t=1;M.st.reached++;S.heroLv=Math.max(0,S.heroLv-1);
+ toastLine(`A ${heroName(h)} is attacking your keep! Kill him before it falls!`,1);
 }
 function catchFairy(){
  const f=S.fairy,mult=(S.up.f2?2:1)*(1+.25*lv('lore'));S.fairy=null;M.st.fairies++;
  const r=Math.random();
- if(S.up.c3&&r<.12){S.buff.surge=10*mult;toastLine(`Fairy caught: DARK SURGE! Taps ×777 for ${Math.round(10*mult)}s. Tap the orb!`)}
- else if(r<.55){S.buff.frenzy=60*mult;toastLine(`Fairy caught: FRENZY! Malice ×7 for ${Math.round(60*mult)}s.`)}
- else{const g=Math.min(S.malice*.15,C.P*900)+13;earn(g);toastLine(`Fairy caught: LUCKY! +${fmt(g)} malice.`);floatMap(f.x,f.y-6,'+'+fmt(g),'gold')}
+ if(S.up.c3&&r<.12){S.buff.surge=10*mult;toastLine(`Fairy caught: DARK SURGE! Taps ×10 for ${Math.round(10*mult)}s. Tap the orb!`)}
+ else if(r<.55){S.buff.frenzy=60*mult;toastLine(`Fairy caught: FRENZY! Malice ×5 for ${Math.round(60*mult)}s.`)}
+ else{const g=Math.min(S.malice*.1,C.P*300)+13;earn(g);toastLine(`Fairy caught: LUCKY! +${fmt(g)} malice.`);floatMap(f.x,f.y-6,'+'+fmt(g),'gold')}
 }
 function tick(dt){
  calc();
  earn(C.Pf*dt);M.play+=dt;
  for(const k in S.buff)if(S.buff[k]>0)S.buff[k]=Math.max(0,S.buff[k]-dt);
- if(!M.flags.hero&&S.runTotal>=2000&&S.own.slime>=5){M.flags.hero=1;S.heroT=6}
+ if(!S.heroOn&&S.runTotal>=2000&&S.own.slime>=5){S.heroOn=1;M.flags.hero=1;S.heroT=M.seen.hero?20:6}
  if(!M.flags.fairy&&S.runTotal>=30000&&M.st.slain>=3){M.flags.fairy=1;S.fairyT=20}
  // the Chosen One is born when this reign crosses the realm's prophecy line
  if(!S.cho&&M.realm<4&&S.startRealm===M.realm&&S.runTotal>=R0().req){S.cho={k:0,base:choBase(),cracks:0,wins:0,t:60};say('chosen');toastLine('A prophecy is fulfilled. The Chosen One has been born, and he is coming for you.',1)}
- if(S.cho&&!S.hero){S.cho.t-=dt;if(S.cho.t<=0)spawnChosen()}
- if(M.flags.hero){
-  if(!S.hero){if(!(S.cho&&S.cho.t<25)){S.heroT-=dt;if(S.heroT<=0){spawnHero();if(!M.seen.hero)say('hero')}}}
-  else{S.hero.t+=dt/((S.hero.cho?32:22)*(S.up.h3?1.3:1));S.hero.hp-=armyDps()*dt;if(S.hero.hp<=0)heroDefeated();else if(S.hero.t>=1)heroReached()}
- }else if(S.hero){S.hero.t+=dt/32;S.hero.hp-=armyDps()*dt;if(S.hero.hp<=0)heroDefeated();else if(S.hero.t>=1)heroReached()}
- if(M.flags.fairy){
-  if(!S.fairy){S.fairyT-=dt*(S.up.f1?2:1)*(1+.25*lv('fairy'));if(S.fairyT<=0){const dir=Math.random()<.5?1:-1;S.fairy={x:dir>0?-4:196,dir,y0:rand(36,100),life:14,ph:Math.random()*6};S.fairyT=rand(70,150);if(!M.seen.fairy)say('fairy')}}
+ if(S.cho&&!choOnRoad()){S.cho.t-=dt;if(S.cho.t<=0)spawnChosen()}
+ if(S.heroOn&&!(S.cho&&S.cho.t<20&&!choOnRoad())){const reg=S.heroes.filter(h=>!h.cho).length;if(reg<3){S.heroT-=dt;if(S.heroT<=0){spawnHero();S.heroT=rand(18,32);if(!M.seen.hero)say('hero')}}}
+ if(S.heroes.length){
+  const f=choOnRoad()||frontHero();f.hp-=armyDps()*dt;
+  const S0=S;
+  for(const h of S.heroes.slice()){
+   if(S!==S0||S.heroes.indexOf(h)<0)continue;
+   if(h.hp<=0){heroDefeated(h);continue}
+   if(h.atKeep)continue;
+   h.t+=dt/((h.cho?32:22)*(S.up.h3?1.3:1));if(h.t>=1)heroReached(h)}
+ }
+ if(S.keepHp==null)S.keepHp=keepMax();
+ {const sd=siegeDps();if(sd>0){S.keepHp-=sd*dt;if(S.keepHp<=0){keepFall();return}}else S.keepHp=Math.min(keepMax(),S.keepHp+4*dt)}
+ if(M.flags.fairy&&S.runTotal>=30000){
+  if(!S.fairy){S.fairyT-=dt*(S.up.f1?2:1)*(1+.25*lv('fairy'));if(S.fairyT<=0){const dir=Math.random()<.5?1:-1;S.fairy={x:dir>0?-4:196,dir,y0:rand(36,100),life:14,ph:Math.random()*6};S.fairyT=rand(180,360);if(!M.seen.fairy)say('fairy')}}
   else{const f=S.fairy;f.life-=dt;f.x+=f.dir*15*dt;f.y=f.y0+Math.sin(M.play*2+f.ph)*12;if(f.life<=0||f.x<-8||f.x>200)S.fairy=null}
  }
 }
@@ -625,12 +645,14 @@ function buy(id){const b=B.find(x=>x.id===id),n=buyN(b),c=bulkCost(b,n);if(S.mal
 function buyUp(id){const u=U.find(x=>x.id===id);if(!u||S.up[id]||S.malice<u.cost)return;S.malice-=u.cost;S.up[id]=1;UI.sel=null;calc();renderUps(true)}
 function checkAch(){for(const a of ACH)if(!M.ach[a.id]&&a.c()){M.ach[a.id]=1;toastLine(`★ Infamy: ${a.n} (+1% malice)`);if(!M.seen.inf)say('inf')}}
 /* Essence grows with the LOG of how far past the line you pushed, so it can't snowball. */
-function sealGain(){const Rm=R0();if(S.runTotal<Rm.req)return 0;return Math.floor((5+8*Math.log10(S.runTotal/Rm.req)+2*(S.cho?S.cho.wins:0))*(1+.5*Math.min(M.realm,3))*(1+.1*lv('siphon')))}
-function doSeal(){const g=sealGain();M.essence+=g;M.st.essence+=g;M.seals++;S=freshRun();calc();setRealm();UI.sealConfirm=0;UI.storeKey='';UI.upKey='';renderAll(true);return g}
+function sealGain(){const Rm=R0();if(S.runTotal<Rm.req)return 0;return Math.floor((8+8*Math.log10(S.runTotal/Rm.req)+3*(S.cho?S.cho.wins:0))*(1+.5*Math.min(M.realm,3))*(1+.1*lv('siphon')))}
+function doSeal(gain){const g=gain!=null?gain:sealGain();M.essence+=g;M.st.essence+=g;M.seals++;S=freshRun();calc();setRealm();UI.sealConfirm=0;UI.storeKey='';UI.upKey='';renderAll(true);return g}
 function seal(){if(S.runTotal<R0().req||sealGain()<1)return;doSeal();closeModal();say('reborn',true)}
+function keepFall(){M.st.falls=(M.st.falls||0)+1;const past=S.runTotal>=R0().req,g=doSeal(past?sealGain():Math.max(1,Math.floor(Math.log10(S.runTotal+1)*.7)));
+ openModal(`<h2>YOUR KEEP HAS FALLEN</h2><p>The heroes tore down your gates and dragged you back into the old seal.</p><p>A thousand years pass. You remember everything.</p><p style="color:var(--ess)">+${g} essence</p><p class="note">${past?'':'You fell before the prophecy line, so you only kept a little essence. '}Kill heroes before they reach the keep, or as soon as they arrive. Thick Walls (Dark Arts) adds keep HP.</p><button class="pbtn go big" data-act="arts">DARK ARTS</button><button class="pbtn big" data-act="close">RISE AGAIN</button>`)}
 function forcedSeal(){const g=doSeal();openModal(`<h2>SEALED AWAY</h2><p>The Chosen One drove his sword into your keep, and the old seal closed around you.</p><p>A thousand years pass. You remember everything.</p><p style="color:var(--ess)">+${g} essence</p><p class="note">Spend essence on Dark Arts (✦ at the top), then rise again.</p><button class="pbtn go big" data-act="arts">DARK ARTS</button><button class="pbtn big" data-act="close">RISE AGAIN</button>`)}
 function conquer(){
- const was=R0(),bonus=10*(M.realm+1);M.essence+=bonus;M.st.essence+=bonus;M.realm++;S.cho=null;S.hero=null;S.heroT=30;setRealm();UI.storeKey='';
+ const was=R0(),bonus=10*(M.realm+1);M.essence+=bonus;M.st.essence+=bonus;M.realm++;S.cho=null;S.heroes=[];S.heroT=30;setRealm();UI.storeKey='';
  if(M.realm>3){openModal(`<h2>LIGHTS OUT</h2><p>The Chosen One of the Heavens fell for the last time. Your Sun Snuffer came down, slowly, and the Sun went out with a small, sad <i>fft</i>.</p><p>There is no one left to stop you. There is no one left at all, really. It’s very quiet.</p><p style="color:var(--ess)">+${bonus} essence</p><p class="note">You have conquered everything. Malice ×3 forever. The game goes on; nothing will seal you again.</p><button class="pbtn go big" data-act="close">RULE THE DARK</button>`);return}
  const nx=R0();
  openModal(`<h2>${was.n.toUpperCase()} HAS FALLEN</h2><p>The Chosen One of ${was.title} lies defeated. The realm is yours.</p><p>Your view pulls back. Beyond the borders lies <b style="color:var(--gold);font-weight:400">${nx.title}</b>, and it has never heard of you.</p><p style="color:var(--ess)">+${bonus} essence</p><p class="note">Malice ×3 forever. New minions to summon. The prophecy of ${nx.n} will only be written after your next Sealing: in that reign, a new Chosen One is born at ${fmtL(nx.req)} malice.</p><button class="pbtn go big" data-act="close">ONWARD</button>`);
@@ -641,7 +663,7 @@ const DLG={
  intro:'You are the <b>Dark Lord</b>. Well... you will be. For now you’re a voice in a crumbling tower. <b>Tap the orb</b> to gather malice.',
  store:'You have enough malice to summon a <b>Slime</b>. Minions make malice on their own, even while you’re away.',
  up:'An <b>upgrade</b> is ready! Upgrades make your minions stronger. Tap the icon to see what it does.',
- hero:'A <b>hero</b> has left the village! Your minions attack him as he walks the road. Tap him to curse him yourself. If he reaches your keep, he smashes pots and steals malice.',
+ hero:'A <b>hero</b> has left the village! Your minions attack him as he walks the road. Tap him to curse him yourself. If he reaches your keep he attacks it. <b>Your keep has 100 HP</b>, and if it falls, your reign ends. Kill them fast. More will follow, and they get tougher.',
  fairy:'A <b>fairy</b>! Tap it before it flies away. Bottled fairies grant big bonuses.',
  multi:'You can now summon minions <b>10 at a time</b>, or <b>MAX</b> to buy as many as you can afford.',
  inf:'You earned an <b>infamy star</b>! Each one adds +1% malice forever. Tap ★ at the top to see them all.',
@@ -704,7 +726,7 @@ function renderUps(force){
 function meter(n,need,best){let h='<div class="meter">';for(let i=0;i<need;i++)h+=`<i class="${i<n?'on':i<best?'best':''}"></i>`;return h+'</div>'}
 function renderCho(){
  const sec=$('choSec');if(!S.cho){sec.hidden=true;sec.dataset.k='';return}sec.hidden=false;
- const c=S.cho,Rm=R0(),best=M.best[Math.min(M.realm,3)]||0,coming=S.hero&&S.hero.cho;
+ const c=S.cho,Rm=R0(),best=M.best[Math.min(M.realm,3)]||0,coming=!!choOnRoad();
  const key=[c.wins,c.cracks,c.k,coming?1:0,Math.ceil(c.t/5),best,fmt(c.base*Math.pow(choG(),c.k))].join();if(sec.dataset.k===key)return;sec.dataset.k=key;
  sec.innerHTML=`<div class="box gold"><h2>THE CHOSEN ONE</h2>
  <p>Defeat him <b style="color:var(--gold);font-weight:400">${Rm.need} times in this reign</b> to conquer ${Rm.title}.</p>
@@ -725,9 +747,10 @@ function renderTop(){
  $('mal').textContent=fmtL(S.malice);
  const ps=$('ps');if(C.P>0||S.own.slime>0){ps.hidden=false;ps.textContent=`per second: ${C.Pf<100?C.Pf.toFixed(1):fmtL(C.Pf)}`}
  const ex=[];
- if(S.buff.frenzy>0)ex.push(`<span class="pill">FRENZY ×7 ${Math.ceil(S.buff.frenzy)}s</span>`);
+ if(S.buff.frenzy>0)ex.push(`<span class="pill">FRENZY ×5 ${Math.ceil(S.buff.frenzy)}s</span>`);
  if(S.buff.surge>0)ex.push(`<span class="pill s">SURGE ${Math.ceil(S.buff.surge)}s</span>`);
- if(S.hero){ex.push(`<span class="${S.hero.cho?'cho':''}">⚔ ${heroName(S.hero)}${S.hero.champ?' (Champion)':''} on the road: ${Math.max(0,Math.ceil(S.hero.hp/S.hero.max*100))}% HP</span>`)}
+ if(S.heroes.length){const f=frontHero(),sieg=S.heroes.filter(h=>h.atKeep).length;ex.push(`<span class="${f.cho?'cho':''}">⚔ ${heroName(f)}${f.champ?' (Champion)':''}${f.atKeep?' attacking your keep':' on the road'}: ${Math.max(0,Math.ceil(f.hp/f.max*100))}% HP${S.heroes.length>1?` · ${S.heroes.length} heroes`:''}</span>`);}
+ if(S.heroOn&&(S.keepHp<keepMax()-.5||S.heroes.some(h=>h.atKeep))){const sd=siegeDps();ex.push(`<span style="color:${sd>0?'var(--hp)':'var(--muted)'}">KEEP ${Math.max(0,Math.ceil(S.keepHp))}/${keepMax()} HP${sd>0?` · losing ${fmt(sd)}/s`:' · repairing'}</span>`)}
  else if(M.flags.hero)ex.push(`<span>⚔ heroes defeated: ${M.st.slain}</span>`);
  const h=ex.join('');const el=$('extra');if(el.dataset.h!==h){el.dataset.h=h;el.innerHTML=h}
  const ib=$('infBtn'),n=achCount();ib.hidden=!n;const ih=`<span class="sym">★</span>${n}`;if(ib.innerHTML!==ih)ib.innerHTML=ih;
@@ -770,7 +793,7 @@ $('orb').addEventListener('pointerdown',e=>{
 mapc.addEventListener('pointerdown',e=>{
  const m=mapRect(),x=(e.clientX-m.r.left-m.ox)/m.s,y=(e.clientY-m.r.top-m.oy)/m.s;
  if(S.fairy&&Math.hypot(x-S.fairy.x,y-S.fairy.y)<12){catchFairy();return}
- if(S.hero){const p=pathAt(S.hero.t);if(Math.hypot(x-p[0],y-(p[1]-4))<12){const d=tapHero();floatMap(p[0]+rand(-4,4),p[1]-14,'-'+fmt(d),'dmg');for(let i=0;i<4;i++)FX.sparks.push({x:p[0]+rand(-3,3),y:p[1]-4+rand(-3,3),l:.5,c:'#c06bff'})}}
+ {let best=null,bd=12,p=null;S.heroes.forEach((h,i)=>{const q=heroPos(h,i),d2=Math.hypot(x-q[0],y-(q[1]-4));if(d2<bd){bd=d2;best=h;p=q}});if(best){const d=tapHero(best);floatMap(p[0]+rand(-4,4),p[1]-14,'-'+fmt(d),'dmg');for(let i=0;i<4;i++)FX.sparks.push({x:p[0]+rand(-3,3),y:p[1]-4+rand(-3,3),l:.5,c:'#c06bff'})}}
 });
 document.addEventListener('click',e=>{
  const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const a=b.dataset.act,arg=b.dataset.arg;
